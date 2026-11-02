@@ -46,8 +46,8 @@
     }
   },
   "git": {
-    "hash": "unknown",
-    "branch": "unknown",
-    "is_dirty": true
+    "hash": "60292c8",
+    "branch": "master",
+    "is_dirty": false
   }
 }
