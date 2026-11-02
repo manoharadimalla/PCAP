@@ -1,0 +1,9 @@
+# RunwayMC Separation Matrix (seconds)
+# Rows: Leader class (0: ARR-H, 1: ARR-M, 2: ARR-L, 3: DEP-H, 4: DEP-M, 5: DEP-L)
+# Columns: Follower class (0: ARR-H, 1: ARR-M, 2: ARR-L, 3: DEP-H, 4: DEP-M, 5: DEP-L)
+96,157,196,60,60,60
+60,69,131,60,60,60
+60,69,82,60,60,60
+75,75,75,60,94,118
+75,75,75,60,60,79
+75,75,75,60,60,60

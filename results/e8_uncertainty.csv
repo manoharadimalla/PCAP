@@ -1,0 +1,3 @@
+strategy,J_out_of_sample,mean_cost,std_cost,p95,cvar95,miss_prob,plan_dev
+Deterministic-Optimized,110994,58452.1,52541.7,152488,237717,1,172.96
+Robust-Optimized (RunwayMC),95233.8,53117.8,42116,138033,194994,1,148.352

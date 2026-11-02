@@ -1,0 +1,53 @@
+{
+  "os": {
+    "system": "Windows",
+    "release": "11",
+    "version": "10.0.26200"
+  },
+  "python": {
+    "version": "3.14.2",
+    "executable": "C:\\Python314\\python.exe"
+  },
+  "cpu": {
+    "processor": "Intel64 Family 6 Model 154 Stepping 3, GenuineIntel",
+    "architecture": "AMD64",
+    "logical_cores": 12,
+    "model": "12th Gen Intel(R) Core(TM) i5-12450H",
+    "physical_cores": "8"
+  },
+  "gpu": {
+    "available": true,
+    "nvcc_installed": false,
+    "nvcc_version": null,
+    "gpus": [
+      {
+        "name": "NVIDIA GeForce RTX 2050",
+        "driver_version": "592.27",
+        "memory_total_mib": "4096"
+      }
+    ]
+  },
+  "compilers": {
+    "g++": {
+      "path": "C:\\msys64\\ucrt64\\bin\\g++.EXE",
+      "version": "15.2.0"
+    },
+    "gcc": {
+      "path": "C:\\msys64\\ucrt64\\bin\\gcc.EXE",
+      "version": "15.2.0"
+    },
+    "cmake": {
+      "path": "C:\\Users\\Admin\\AppData\\Roaming\\Python\\Python314\\Scripts\\cmake.EXE",
+      "version": "cmake version 4.4.4"
+    },
+    "ninja": {
+      "path": "C:\\Users\\Admin\\AppData\\Roaming\\Python\\Python314\\Scripts\\ninja.EXE",
+      "version": "1.13.2.git.kitware.jobserver-pipe-1"
+    }
+  },
+  "git": {
+    "hash": "unknown",
+    "branch": "unknown",
+    "is_dirty": true
+  }
+}
