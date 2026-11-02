@@ -6,6 +6,7 @@
 #include <chrono>
 #include <algorithm>
 #include <numeric>
+#include <iostream>
 
 namespace runway {
 
@@ -50,7 +51,8 @@ SAResult solve_sa_serial(
     int I,
     uint64_t seed,
     float lambda_std,
-    float m_penalty
+    float m_penalty,
+    bool progress
 ) {
     auto start_time = std::chrono::high_resolution_clock::now();
     int n = data.n;
@@ -120,6 +122,7 @@ SAResult solve_sa_serial(
     NoiseData epoch_noise;
     NoiseData sync_noise;
     std::vector<int> proposal(n);
+    std::vector<ConvergencePoint> convergence_history;
 
     // 3. Epoch Loop
     for (int epoch = 1; epoch <= E; ++epoch) {
@@ -190,6 +193,13 @@ SAResult solve_sa_serial(
             chains[worst_idx].perm = best_p;
             chains[worst_idx].best_perm = best_p;
         }
+
+        auto epoch_now = std::chrono::high_resolution_clock::now();
+        double elapsed_s = std::chrono::duration<double>(epoch_now - start_time).count();
+        convergence_history.push_back({epoch, global_best_J, elapsed_s});
+        if (progress) {
+            std::cerr << "PROGRESS " << epoch << "/" << E << " " << global_best_J << " " << elapsed_s << "\n";
+        }
     }
 
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -206,6 +216,7 @@ SAResult solve_sa_serial(
     result.iters_per_epoch = I;
     result.chains = C;
     result.scenarios = S;
+    result.convergence = std::move(convergence_history);
 
     return result;
 }

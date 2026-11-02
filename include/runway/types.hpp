@@ -147,6 +147,13 @@ struct EvalResult {
     float emergency_mean_delay = 0.0f;
     float emergency_max_delay = 0.0f;
     float plan_deviation = 0.0f;
+    std::vector<float> per_scenario_costs;
+};
+
+struct ConvergencePoint {
+    int epoch = 0;
+    float best_J = 0.0f;
+    double elapsed_s = 0.0;
 };
 
 struct SAResult {
@@ -160,6 +167,7 @@ struct SAResult {
     int iters_per_epoch = 0;
     int chains = 0;
     int scenarios = 0;
+    std::vector<ConvergencePoint> convergence;
 };
 
 } // namespace runway

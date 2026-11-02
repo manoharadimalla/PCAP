@@ -93,7 +93,33 @@ This log records design decisions, deviations from the baseline spec, phase comp
 
 ---
 
-## Phase P7 — Analysis & Comprehensive Research Report
+## Phase P6b — Native Desktop GUI (PySide6)
+- **Status:** COMPLETED & PASSED.
+- **Specification Source:** `SPEC_CHANGES_GUI.md` (overrides Streamlit web app in `SPEC.md`).
+- **Architecture Overview:**
+  - Strict **thin front-end** principle followed: zero scheduling, simulation, or search algorithms implemented in Python.
+  - Interacts exclusively with the C++ `runway` binary via CLI commands and filesystem I/O (`instance.csv`, `separation.csv`, `params.cfg`, `result.json`).
+  - Implemented using **PySide6 (Qt for Python)** and embedded **Matplotlib** widgets (`FigureCanvasQTAgg`).
+- **CLI Enhancements Built in C++:**
+  - `runway info`: Outputs system hardware capability JSON (`version`, `cuda_available`, `gpu_name`, `omp_max_threads`).
+  - `runway validate`: Validates instance datasets, time feasibility (`ready <= target <= latest`), and separation matrices.
+  - `runway replay`: Replays deterministic or single realization timelines with closure intervals and weather effects.
+  - `runway solve` extensions: `--progress` (outputs `PROGRESS <epoch>/<E> <best_J> <elapsed_s>` to `stderr`), `--dump-costs N`, `--separation FILE`, and `--s-final N`.
+- **GUI Components in `gui/`:**
+  - `gui/__main__.py` & `gui/main.py`: Entry points launching the standalone Qt application.
+  - `gui/models.py`: Data-only structures (`AircraftRow`, `ScenarioSettings`, `SearchSettings`, `ExecutionSettings`, `ProjectState`).
+  - `gui/io_files.py`: Read/write handlers for instance CSVs, separation matrices, INI configurations, and project snapshots.
+  - `gui/runner.py`: Asynchronous `QProcess` runner with real-time `PROGRESS` line stream parsing and clean cancellation.
+  - `gui/plots.py`: Pure Matplotlib plotting utilities for timelines, cost distributions, convergence curves, and scenario replays.
+  - `gui/panels/`: Editable panels for Aircraft (`QTableWidget` + `QUndoStack`), Scenario parameters, Separation 6x6 matrix, Search parameters, and Execution controls (CPU/OpenMP/CUDA detection).
+  - `gui/results/`: Results tabs for Summary metrics, Timeline Gantt charts, Monte Carlo distributions, Scenario Replay, Live Convergence, and Multi-implementation comparison dialog.
+  - Pop-out capabilities: Each chart tab includes a "Pop out ⧉" button opening in an independent resizable window.
+  - Launcher batch script: `RUN_GUI.bat` for one-click desktop execution.
+- **Verification:**
+  - All 175 Catch2 tests pass.
+  - Python headless unit tests pass (`gui/tests/test_gui.py`).
+  - Qt offscreen test confirms window initialization, splitter layout, and event processing without errors.
+
 - **Status:** COMPLETED.
 - **Report Document:** `report/REPORT.md`
 - **Integrity Compliance:**

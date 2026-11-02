@@ -97,6 +97,8 @@ EvalResult evaluate_schedule_cpu(
         res.emergency_max_delay = emerg_delay_max;
     }
 
+    res.per_scenario_costs = costs;
+
     // p95 and CVaR95
     std::sort(costs.begin(), costs.end());
     int idx95 = static_cast<int>(std::floor(0.95 * (S - 1)));

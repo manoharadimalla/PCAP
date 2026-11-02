@@ -99,7 +99,8 @@ SAResult solve_sa_serial(
     int I,
     uint64_t seed,
     float lambda_std = 1.0f,
-    float m_penalty = 5.0f
+    float m_penalty = 5.0f,
+    bool progress = false
 );
 
 #if defined(RUNWAY_HAS_OPENMP)
@@ -114,7 +115,8 @@ SAResult solve_sa_omp(
     const std::string& mode = "chains", // "chains", "scenarios", "hybrid"
     int num_threads = 0,
     float lambda_std = 1.0f,
-    float m_penalty = 5.0f
+    float m_penalty = 5.0f,
+    bool progress = false
 );
 #endif
 

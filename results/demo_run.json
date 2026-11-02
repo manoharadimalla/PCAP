@@ -1,0 +1,18 @@
+{
+  "impl": "omp",
+  "chains": 32,
+  "scenarios": 1024,
+  "iters": 1000,
+  "epochs": 5,
+  "seed": 42,
+  "J_in_sample": 98865.2,
+  "J_out_of_sample": 93765,
+  "mean_cost": 51969.4,
+  "std_cost": 41795.6,
+  "p95": 136635,
+  "cvar95": 193466,
+  "miss_prob": 1,
+  "plan_dev": 159.094,
+  "total_time_ms": 12040.5,
+  "sim_per_sec": 1.36074e+07
+}

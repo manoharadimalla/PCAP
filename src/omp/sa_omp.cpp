@@ -6,6 +6,7 @@
 #include <chrono>
 #include <algorithm>
 #include <numeric>
+#include <iostream>
 
 #if defined(RUNWAY_HAS_OPENMP)
 #include <omp.h>
@@ -124,7 +125,8 @@ SAResult solve_sa_omp(
     const std::string& mode,
     int num_threads,
     float lambda_std,
-    float m_penalty
+    float m_penalty,
+    bool progress
 ) {
     if (num_threads > 0) {
         omp_set_num_threads(num_threads);
@@ -195,6 +197,7 @@ SAResult solve_sa_omp(
 
     NoiseData epoch_noise;
     NoiseData sync_noise;
+    std::vector<ConvergencePoint> convergence_history;
 
     for (int epoch = 1; epoch <= E; ++epoch) {
         generate_noise_cpu(epoch_noise, data, S, seed + static_cast<uint64_t>(epoch) * 1000ULL);
@@ -339,6 +342,13 @@ SAResult solve_sa_omp(
             chains[worst_idx].perm = best_p;
             chains[worst_idx].best_perm = best_p;
         }
+
+        auto epoch_now = std::chrono::high_resolution_clock::now();
+        double elapsed_s = std::chrono::duration<double>(epoch_now - start_time).count();
+        convergence_history.push_back({epoch, global_best_J, elapsed_s});
+        if (progress) {
+            std::cerr << "PROGRESS " << epoch << "/" << E << " " << global_best_J << " " << elapsed_s << "\n";
+        }
     }
 
     auto end_time = std::chrono::high_resolution_clock::now();
@@ -355,6 +365,7 @@ SAResult solve_sa_omp(
     result.iters_per_epoch = I;
     result.chains = C;
     result.scenarios = S;
+    result.convergence = std::move(convergence_history);
 
     return result;
 }
