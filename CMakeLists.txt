@@ -60,14 +60,10 @@ endif()
 if(USE_CUDA)
     add_compile_definitions(RUNWAY_HAS_CUDA=1)
     set(CUDA_SOURCES
-        src/cuda/noise_gpu.cu
-        src/cuda/eval_kernels.cu
-        src/cuda/sa_kernel.cu
         src/cuda/sa_gpu.cu
     )
     add_library(runway_cuda STATIC ${CUDA_SOURCES})
-    set_target_properties(runway_cuda PROPERTIES CUDA_SEPARABLE_COMPILATION OFF)
-    target_include_directories(runway_cuda PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    target_include_directories(runway_cuda PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include ${CMAKE_CURRENT_SOURCE_DIR}/src/cuda)
     find_package(CUDAToolkit REQUIRED)
     target_link_libraries(runway_cuda PUBLIC CUDA::curand CUDA::cudart)
 endif()

@@ -7,52 +7,11 @@
 #include <algorithm>
 #include <numeric>
 
+// Include kernel and noise implementations in this translation unit
+#include "noise_gpu.cu"
+#include "sa_kernel.cu"
+
 namespace runway {
-namespace cuda {
-
-// Declare (not define) — defined in sa_kernel.cu
-extern __constant__ float c_sep[36];
-
-void generate_noise_gpu(
-    float* d_delay,
-    float* d_mult,
-    float* d_closeA,
-    float* d_closeB,
-    const int* d_op,
-    int n,
-    int S,
-    float t_min,
-    float t_max,
-    uint64_t seed,
-    float p_close = 0.20f
-);
-
-template <int BLOCK_SIZE, int MAX_N>
-extern __global__ void sa_k2_k3_kernel(
-    int* d_chain_perms,
-    int* d_chain_bests,
-    float* d_chain_J_bests,
-    uint64_t* d_rng_states,
-    int C,
-    int n,
-    int S,
-    int I,
-    float alpha,
-    float initial_T,
-    const float* __restrict__ d_ready,
-    const float* __restrict__ d_target,
-    const float* __restrict__ d_latest,
-    const float* __restrict__ d_weight,
-    const int* __restrict__ d_cls,
-    const float* __restrict__ d_delay,
-    const float* __restrict__ d_mult,
-    const float* __restrict__ d_closeA,
-    const float* __restrict__ d_closeB,
-    float lambda_std,
-    float m_penalty
-);
-
-} // namespace cuda
 
 #if defined(RUNWAY_HAS_CUDA)
 
