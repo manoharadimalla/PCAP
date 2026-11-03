@@ -23,8 +23,8 @@
 namespace runway {
 namespace cuda {
 
-// 6x6 separation matrix in GPU constant memory for K3
-extern __constant__ float c_sep[36];
+// NOTE: c_sep is defined in sa_kernel.cu only.
+// Files that need it declare it locally with: extern __constant__ float c_sep[36];
 
 template <typename T>
 __device__ __forceinline__ T warp_reduce_sum(T val) {

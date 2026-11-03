@@ -5,7 +5,8 @@
 namespace runway {
 namespace cuda {
 
-// c_sep is defined in sa_kernel.cu and declared extern in cuda_common.cuh
+// Declare (not define) — defined in sa_kernel.cu
+extern __constant__ float c_sep[36];
 
 // K1 Naive Baseline: thread-per-candidate
 __global__ void eval_k1_candidates_kernel(

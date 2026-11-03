@@ -10,6 +10,9 @@
 namespace runway {
 namespace cuda {
 
+// Declare (not define) — defined in sa_kernel.cu
+extern __constant__ float c_sep[36];
+
 void generate_noise_gpu(
     float* d_delay,
     float* d_mult,
