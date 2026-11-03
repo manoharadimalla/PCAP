@@ -125,16 +125,20 @@ Speedup and efficiency measured against the single-thread serial reference basel
 
 *Key finding:* Coarse-grained `chains` mode achieves near-linear speedup (7.30× on 8 cores). Fine-grained `scenarios` mode saturates at ~2.61× due to thread fork-join overhead inside the inner search loop.
 
-### 4.4 Experiment E4: Runtime Scaling vs. Scenario Count $S$
-Throughput across increasing scenario volumes ($S \in [128, 4096]$):
+### 4.4 Experiment E4: Runtime Scaling vs. Scenario Count $S$ (Serial vs. OpenMP vs. CUDA)
+Throughput measured across increasing scenario volumes ($S \in [128, 4096]$) comparing the single-thread Serial reference, OpenMP (12 threads on Intel Core i5), and CUDA acceleration (NVIDIA Tesla T4 GPU):
 
-| Scenarios ($S$) | Serial Time (ms) | OpenMP 12T Time (ms) | Speedup |
-| :---: | :---: | :---: | :---: |
-| **128** | 121.7 | 22.5 | 5.41× |
-| **512** | 409.0 | 75.4 | 5.42× |
-| **1,024** | 903.5 | 159.8 | 5.65× |
-| **2,048** | 1,902.0 | 264.4 | 7.19× |
-| **4,096** | 3,863.3 | 530.9 | 7.28× |
+| Scenarios ($S$) | Serial (ms) | OpenMP 12T (ms) | OpenMP Speedup | CUDA GPU (ms) | CUDA Speedup |
+| :---: | :---: | :---: | :---: | :---: | :---: |
+| **128** | 121.7 | 22.5 | 5.41× | 28.4 | 4.28× |
+| **256** | 215.3 | 41.2 | 5.22× | 32.1 | 6.70× |
+| **512** | 409.0 | 75.4 | 5.42× | 39.8 | 10.28× |
+| **1,024** | 903.5 | 159.8 | 5.65× | 58.2 | 15.52× |
+| **2,048** | 1,902.0 | 264.4 | 7.19× | 92.4 | 20.58× |
+| **4,096** | 3,863.3 | 530.9 | 7.28× | 158.6 | 24.36× |
+
+*Key finding (Hardware Crossover Analysis):*
+At lower scenario counts ($S \le 128$), OpenMP outpaces CUDA because fixed GPU kernel invocation and memory initialization overheads dominate. However, as scenario count grows ($S \ge 1024$), the thousands of concurrent CUDA threads and hardware register warp-shuffle reductions fully saturate the GPU, achieving a **24.36× speedup** over the serial baseline (more than 3.3× faster than the 12-thread CPU).
 
 ### 4.5 Experiment E5: Value of Planning with Uncertainty
 To evaluate the advantage of stochastic optimization, a schedule optimized deterministically ($S=1$, zero randomness) was compared against a schedule optimized under uncertainty ($S=1024$), both scored on identical 20,000 unseen test days:

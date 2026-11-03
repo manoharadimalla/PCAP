@@ -7,43 +7,58 @@ RunwayMC is a parallel Monte Carlo simulation and optimization engine for robust
 ---
 
 ## Highlights & Features
-- **Parallel Computing Core:** Multi-core OpenMP parallelization on CPU and massively parallel CUDA architecture for NVIDIA GPUs.
-- **Robust vs. Deterministic:** Achieves over **44% delay cost reduction** on unseen test days compared to deterministic planning.
-- **Interactive Native GUI:** Native PySide6 desktop pop-up application with Gantt charts, Monte Carlo distributions, and real-time solving.
-- **Tested & Verified:** Validated with Catch2 unit tests, determinism checks, and brute-force equivalence on small problem sizes.
+- **Parallel Computing Core:** Three unified implementations sharing a single exact simulation engine: **Serial** (1 thread baseline), **OpenMP** (multi-core CPU), and **CUDA** (massively parallel GPU acceleration).
+- **GUI-to-Cloud Workflow:** Create and visualize aircraft schedules in the native Windows desktop GUI, export to CSV, and run large-scale CUDA solves on NVIDIA GPUs via Google Colab.
+- **Robust vs. Deterministic:** Achieves over **44% delay cost reduction** on 20,000 unseen test days compared to deterministic planning.
+- **Automated Benchmarks & Visualizations:** Automated harness for experiments E1 through E5 generating publication-quality speedup and scaling curves comparing Serial, OpenMP, and CUDA.
+- **Tested & Verified:** Validated with Catch2 unit tests, determinism checks, and numerical CPU $\leftrightarrow$ GPU equivalence.
 
 ---
 
 ## Quick Start
 
-### 1. Run the Desktop GUI
-Simply double-click **`RUN_GUI.bat`** or run:
+### 1. Run the Desktop GUI (Windows)
+Double-click **`RUN_GUI.bat`** or run:
 ```powershell
 python -m gui
 ```
+*Features:* Real-time flight table editor, interactive solve launcher, Gantt timeline charts, delay distributions, and CSV import/export.
 
-### 2. Run the Interactive Terminal Demo
-Double-click **`RUN_DEMO.bat`** or run:
-```powershell
-python run_demo.py
-```
+### 2. Run on Google Colab with NVIDIA GPU (CUDA)
+Open **`scripts/colab_run.ipynb`** in Google Colab:
+1. Set runtime to **T4 GPU** (`Runtime -> Change runtime type -> T4 GPU`).
+2. Run cells in order to clone the repo, compile with CUDA + OpenMP, solve interactive flight batches, and render all benchmark charts.
 
-### 3. Build from Source
-Requirements: C++17 compiler (GCC / Clang / MSVC), CMake $\ge$ 3.20, Ninja.
-```powershell
-cmake -B build -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DUSE_CUDA=OFF -DUSE_OPENMP=ON
-cmake --build build -j8
-```
+### 3. Build & Test from Source (Local / Command-Line)
+Requirements: C++17 compiler (GCC / Clang / MSVC), CMake $\ge$ 3.20.
+```bash
+# Build without CUDA (CPU + OpenMP)
+cmake -B build -DCMAKE_BUILD_TYPE=Release -DUSE_CUDA=OFF -DUSE_OPENMP=ON
+cmake --build build -j$(nproc)
 
-### 4. Run Automated Tests
-```powershell
-.\build\runway_tests.exe
+# Run Catch2 tests
+ctest --test-dir build --output-on-failure
 ```
 
 ---
 
+## Benchmark Experiments (E1 – E5)
+
+Run the full automated benchmark suite:
+```bash
+python3 bench/run_bench.py --all
+python3 scripts/make_plots.py
+```
+This produces all result CSVs and generated plots in `results/figures/`:
+* **`e2_baselines.png`:** Compares FCFS vs. Random Search vs. RunwayMC SA. Proves optimization cuts delays by 48%.
+* **`e3_openmp_scaling.png`:** Evaluates multi-core CPU scaling across thread counts (Chains vs. Scenarios).
+* **`e4_throughput.png` & `e4_cuda_speedup.png`:** Scaling across scenario volumes ($S \in [128, 4096]$) comparing **Serial vs. OpenMP vs. CUDA**.
+* **`e5_uncertainty.png`:** Proves that planning under uncertainty reduces test-day delay costs by 44.3%.
+
+---
+
 ## Project Structure & Documentation
-- **`docs/PROJECT.md`:** Concise technical summary of the model, algorithm, and experiments.
-- **`docs/EXPLAIN.md`:** Comprehensive viva and presentation guide with 12 Q&As.
-- **`report/REPORT.md`:** Full academic research report with experimental figures.
-- **`results/`:** Generated benchmark CSV files and figures for experiments E1–E5.
+- **`docs/EXPLAIN.md`:** ⭐ Comprehensive **Viva & Presentation Guide** with architecture diagrams, graph explanations, CPU vs GPU comparisons, and likely exam questions.
+- **`report/REPORT.md`:** Full academic research paper and evaluation report.
+- **`docs/SPEC.md`:** Technical specification of the exact simulation decoder and mathematical formulation.
+- **`scripts/colab_run.ipynb`:** Self-contained Google Colab demonstration notebook.
