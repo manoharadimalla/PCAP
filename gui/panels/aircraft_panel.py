@@ -518,8 +518,13 @@ class AircraftPanel(QWidget):
             for c in range(self.table.columnCount()):
                 item = self.table.item(r, c)
                 if item:
-                    item.setBackground(QColor(Qt.GlobalColor.white))
+                    item.setData(Qt.ItemDataRole.BackgroundRole, None)
+                    item.setData(Qt.ItemDataRole.ForegroundRole, None)
                     item.setToolTip("")
+                widget = self.table.cellWidget(r, c)
+                if widget:
+                    widget.setStyleSheet("")
+                    widget.setToolTip("")
 
         col_map = {
             "id": self.COL_ID,
@@ -533,6 +538,7 @@ class AircraftPanel(QWidget):
         }
 
         error_color = QColor(255, 204, 204)  # Light red
+        error_text_color = QColor(139, 0, 0)  # Dark red for high contrast
 
         for err in errors:
             row_idx = err.get("row", -1)
@@ -545,11 +551,22 @@ class AircraftPanel(QWidget):
                     item = self.table.item(row_idx, target_col)
                     if item:
                         item.setBackground(error_color)
+                        item.setForeground(error_text_color)
                         item.setToolTip(msg)
+                    else:
+                        widget = self.table.cellWidget(row_idx, target_col)
+                        if widget:
+                            widget.setStyleSheet("border: 2px solid #e74c3c; background-color: #ffcccc; color: #8b0000;")
+                            widget.setToolTip(msg)
                 else:
                     # Highlight whole row if generic
                     for c in range(self.table.columnCount()):
                         item = self.table.item(row_idx, c)
                         if item:
                             item.setBackground(error_color)
+                            item.setForeground(error_text_color)
                             item.setToolTip(msg)
+                        widget = self.table.cellWidget(row_idx, c)
+                        if widget:
+                            widget.setStyleSheet("border: 2px solid #e74c3c; background-color: #ffcccc; color: #8b0000;")
+                            widget.setToolTip(msg)
