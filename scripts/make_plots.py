@@ -1,152 +1,134 @@
 #!/usr/bin/env python3
 """
-RunwayMC Plot Generation Script (Section 10)
-Reads CSV files from results/ and generates plots to results/figures/
+RunwayMC Plotting Script
+Generates figures for experiments E2, E3, E4, E5 to results/figures/
 """
 
 import os
-import pandas as pd
+import csv
 import matplotlib.pyplot as plt
 import numpy as np
 
-def setup_style():
-    plt.rcParams.update({
-        "font.family": "sans-serif",
-        "font.size": 11,
-        "axes.labelsize": 12,
-        "axes.titlesize": 13,
-        "xtick.labelsize": 10,
-        "ytick.labelsize": 10,
-        "legend.fontsize": 10,
-        "figure.titlesize": 14,
-        "grid.color": "#e0e0e0",
-        "grid.linestyle": "--",
-        "grid.linewidth": 0.7,
-        "axes.grid": True,
-        "figure.autolayout": True
-    })
+os.makedirs("results/figures", exist_ok=True)
+plt.style.use("seaborn-v0_8-whitegrid" if "seaborn-v0_8-whitegrid" in plt.style.available else "default")
 
-def plot_e2(out_dir="results/figures"):
-    csv_file = "results/e2_baselines.csv"
-    if not os.path.exists(csv_file): return
-    df = pd.read_csv(csv_file)
+# -------------------------------------------------------------
+# Figure E2: Baselines
+# -------------------------------------------------------------
+if os.path.exists("results/e2_baselines.csv"):
+    methods = []
+    mean_costs = []
+    p95_costs = []
+    with open("results/e2_baselines.csv") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            methods.append(r["method"])
+            mean_costs.append(float(r["mean_cost"]))
+            p95_costs.append(float(r["p95_cost"]))
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    x = np.arange(len(df["rho"]))
-    w = 0.2
+    x = np.arange(len(methods))
+    width = 0.35
 
-    ax.bar(x - 1.5*w, df["J_FCFS"], width=w, label="FCFS", color="#4e79a7")
-    ax.bar(x - 0.5*w, df["J_Random"], width=w, label="Random Search", color="#f28e2b")
-    ax.bar(x + 0.5*w, df["J_SA"], width=w, label="Simulated Annealing (Ours)", color="#59a14f")
-    ax.bar(x + 1.5*w, df["J_Brute"], width=w, label="Brute Force Optimum", color="#e15759")
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    rects1 = ax.bar(x - width/2, mean_costs, width, label="Mean Cost", color="#2b5c8f")
+    rects2 = ax.bar(x + width/2, p95_costs, width, label="P95 Tail Cost", color="#d95f02")
 
+    ax.set_ylabel("Cost (seconds delay penalty)")
+    ax.set_title("E2: Schedule Quality Comparison on 20,000 Test Days (n=30)", fontweight="bold")
     ax.set_xticks(x)
-    ax.set_xticklabels([f"rho = {r}" for r in df["rho"]])
-    ax.set_ylabel("Expected Robust Cost J(pi)")
-    ax.set_title("E2: Baseline Comparison on n=8, S=500")
+    ax.set_xticklabels(methods, rotation=10, ha="right")
     ax.legend()
-
-    for ext in ["png", "pdf"]:
-        fig.savefig(os.path.join(out_dir, f"e2_baselines.{ext}"), dpi=300)
+    fig.tight_layout()
+    fig.savefig("results/figures/e2_baselines.png", dpi=300)
+    fig.savefig("results/figures/e2_baselines.pdf")
     plt.close(fig)
-    print("Generated E2 baselines plot")
+    print("Generated E2 figure")
 
-def plot_e3(out_dir="results/figures"):
-    csv_file = "results/e3_openmp_scaling.csv"
-    if not os.path.exists(csv_file): return
-    df = pd.read_csv(csv_file)
+# -------------------------------------------------------------
+# Figure E3: OpenMP Scaling
+# -------------------------------------------------------------
+if os.path.exists("results/e3_openmp_scaling.csv"):
+    data = {"chains": ([], []), "scenarios": ([], [])}
+    with open("results/e3_openmp_scaling.csv") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            mode = r["mode"]
+            data[mode][0].append(int(r["threads"]))
+            data[mode][1].append(float(r["speedup"]))
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    ax.plot(data["chains"][0], data["chains"][1], "o-", label="OpenMP Chains (Coarse-grained)", color="#2b5c8f", lw=2)
+    ax.plot(data["scenarios"][0], data["scenarios"][1], "s--", label="OpenMP Scenarios (Fine-grained)", color="#d95f02", lw=2)
+    ax.plot(data["chains"][0], data["chains"][0], "k:", alpha=0.5, label="Linear Ideal")
 
-    modes = df["mode"].unique()
-    colors = {"chains": "#1f77b4", "scenarios": "#ff7f0e", "hybrid": "#2ca02c"}
-
-    max_th = df["threads"].max()
-    ax1.plot([1, max_th], [1, max_th], "k--", label="Ideal Linear", alpha=0.7)
-
-    for m in modes:
-        sub = df[df["mode"] == m]
-        ax1.plot(sub["threads"], sub["speedup"], marker="o", label=f"O: {m}", color=colors.get(m, "blue"))
-        ax2.plot(sub["threads"], sub["efficiency"], marker="s", label=f"O: {m}", color=colors.get(m, "blue"))
-
-    ax1.set_xlabel("OpenMP Threads")
-    ax1.set_ylabel("Speedup vs 1-Thread Chains")
-    ax1.set_title("OpenMP Strong Scaling (Speedup)")
-    ax1.legend()
-
-    ax2.set_xlabel("OpenMP Threads")
-    ax2.set_ylabel("Parallel Efficiency (Speedup / Threads)")
-    ax2.set_title("OpenMP Parallel Efficiency")
-    ax2.set_ylim(0, 1.1)
-    ax2.legend()
-
-    for ext in ["png", "pdf"]:
-        fig.savefig(os.path.join(out_dir, f"e3_openmp_scaling.{ext}"), dpi=300)
+    ax.set_xlabel("CPU Threads")
+    ax.set_ylabel("Speedup vs. Serial Baseline")
+    ax.set_title("E3: OpenMP Multi-Core Scaling on Intel Core i5-12450H", fontweight="bold")
+    ax.set_xticks(data["chains"][0])
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig("results/figures/e3_openmp_scaling.png", dpi=300)
+    fig.savefig("results/figures/e3_openmp_scaling.pdf")
     plt.close(fig)
-    print("Generated E3 OpenMP scaling plot")
+    print("Generated E3 figure")
 
-def plot_e4(out_dir="results/figures"):
-    csv_file = "results/e4_throughput.csv"
-    if not os.path.exists(csv_file): return
-    df = pd.read_csv(csv_file)
+# -------------------------------------------------------------
+# Figure E4: Throughput vs S
+# -------------------------------------------------------------
+if os.path.exists("results/e4_throughput.csv"):
+    s_vals, ser_times, omp_times = [], [], []
+    with open("results/e4_throughput.csv") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            s_vals.append(int(r["scenarios"]))
+            ser_times.append(float(r["serial_time_ms"]))
+            omp_times.append(float(r["omp_time_ms"]))
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    for n in df["n"].unique():
-        sub = df[df["n"] == n]
-        ax.plot(sub["S"], sub["omp_sim_per_sec"], marker="^", label=f"n = {n} (OpenMP)")
+    fig, ax = plt.subplots(figsize=(7, 4.5))
+    ax.plot(s_vals, ser_times, "o-", label="Serial Reference", color="#e7298a", lw=2)
+    ax.plot(s_vals, omp_times, "s-", label="OpenMP (12 threads)", color="#2b5c8f", lw=2)
 
-    ax.set_xlabel("Number of Scenarios (S)")
-    ax.set_ylabel("Throughput (Scenario Simulations / sec)")
-    ax.set_title("E4: Parallel Evaluation Throughput Scaling")
     ax.set_xscale("log", base=2)
+    ax.set_yscale("log")
+    ax.set_xlabel("Scenarios (S)")
+    ax.set_ylabel("Execution Time (ms, log scale)")
+    ax.set_title("E4: Execution Time Scaling with Scenario Count S", fontweight="bold")
     ax.legend()
-
-    for ext in ["png", "pdf"]:
-        fig.savefig(os.path.join(out_dir, f"e4_throughput.{ext}"), dpi=300)
+    fig.tight_layout()
+    fig.savefig("results/figures/e4_throughput.png", dpi=300)
+    fig.savefig("results/figures/e4_throughput.pdf")
     plt.close(fig)
-    print("Generated E4 throughput plot")
+    print("Generated E4 figure")
 
-def plot_e8(out_dir="results/figures"):
-    csv_file = "results/e8_uncertainty.csv"
-    if not os.path.exists(csv_file): return
-    df = pd.read_csv(csv_file)
+# -------------------------------------------------------------
+# Figure E5: Robust vs Deterministic
+# -------------------------------------------------------------
+if os.path.exists("results/e5_uncertainty.csv"):
+    strategies = []
+    mean_c, p95_c = [], []
+    with open("results/e5_uncertainty.csv") as f:
+        reader = csv.DictReader(f)
+        for r in reader:
+            strategies.append("Deterministic\n(no randomness)" if "Deterministic" in r["strategy"] else "Robust RunwayMC\n(S=1024 training)")
+            mean_c.append(float(r["test_mean_cost"]))
+            p95_c.append(float(r["test_p95_cost"]))
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(11, 4.5))
+    x = np.arange(len(strategies))
+    width = 0.35
 
-    strat = df["strategy"]
-    colors = ["#d95f02", "#1b9e77"]
+    fig, ax = plt.subplots(figsize=(6, 4.5))
+    ax.bar(x - width/2, mean_c, width, label="Test Mean Cost", color="#7570b3")
+    ax.bar(x + width/2, p95_c, width, label="Test P95 Cost", color="#1b9e77")
 
-    # Bar chart of OOS J and CVaR95
-    x = np.arange(len(strat))
-    w = 0.35
-    ax1.bar(x - w/2, df["J_out_of_sample"], width=w, label="Out-of-Sample J", color=colors[0])
-    ax1.bar(x + w/2, df["cvar95"], width=w, label="CVaR95 (Tail Risk)", color=colors[1])
-    ax1.set_xticks(x)
-    ax1.set_xticklabels(["Deterministic", "Robust (Ours)"])
-    ax1.set_ylabel("Expected Cost")
-    ax1.set_title("Cost & Tail Risk Under Uncertainty")
-    ax1.legend()
-
-    # Miss Probability
-    ax2.bar(strat, df["miss_prob"] * 100, color=["#e7298a", "#7570b3"], width=0.4)
-    ax2.set_ylabel("Deadline Miss Probability (%)")
-    ax2.set_title("Deadline Miss Risk Under Operational Disturbances")
-    ax2.set_xticklabels(["Deterministic", "Robust (Ours)"])
-
-    for ext in ["png", "pdf"]:
-        fig.savefig(os.path.join(out_dir, f"e8_uncertainty.{ext}"), dpi=300)
+    ax.set_ylabel("Cost on 20,000 Unseen Test Days")
+    ax.set_title("E5: Value of Planning with Randomness", fontweight="bold")
+    ax.set_xticks(x)
+    ax.set_xticklabels(strategies)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig("results/figures/e5_uncertainty.png", dpi=300)
+    fig.savefig("results/figures/e5_uncertainty.pdf")
     plt.close(fig)
-    print("Generated E8 uncertainty plot")
+    print("Generated E5 figure")
 
-def main():
-    setup_style()
-    out_dir = "results/figures"
-    os.makedirs(out_dir, exist_ok=True)
-    plot_e2(out_dir)
-    plot_e3(out_dir)
-    plot_e4(out_dir)
-    plot_e8(out_dir)
-    print(f"All available plots generated in {out_dir}")
-
-if __name__ == "__main__":
-    main()
+print("All benchmark figures successfully generated!")

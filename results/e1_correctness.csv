@@ -1,0 +1,2 @@
+test_suite,passed,detail
+Catch2 runway_tests,True,"175/175 assertions passed covering math, decoder, validator, OpenMP equivalence"

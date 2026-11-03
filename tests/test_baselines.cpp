@@ -10,8 +10,8 @@ TEST_CASE("Serial determinism: same seed produces identical results", "[baseline
     AircraftData data = generate_instance(15, 1.2f, 100);
     SeparationMatrix sep = get_default_separation_matrix();
 
-    SAResult res1 = solve_sa_serial(data, sep, 8, 256, 3, 500, 424242);
-    SAResult res2 = solve_sa_serial(data, sep, 8, 256, 3, 500, 424242);
+    SAResult res1 = solve_sa_serial(data, sep, 8, 256, 1500, 424242);
+    SAResult res2 = solve_sa_serial(data, sep, 8, 256, 1500, 424242);
 
     REQUIRE(res1.best_perm.size() == res2.best_perm.size());
     for (size_t i = 0; i < res1.best_perm.size(); ++i) {
@@ -29,19 +29,17 @@ TEST_CASE("Brute-force optimum vs SA on n=8, S=500", "[baselines]") {
     NoiseData noise;
     generate_noise_cpu(noise, data, S, 12345);
 
-    SAResult opt_brute = solve_brute_force(data, sep, noise, 1.0f, 5.0f);
+    SAResult opt_brute = solve_brute_force(data, sep, noise, 5.0f);
     float true_opt_J = opt_brute.in_sample_J;
 
     int success_count = 0;
     const int NUM_SEEDS = 20;
 
     for (int s = 1; s <= NUM_SEEDS; ++s) {
-        // SA search with fixed noise for direct comparison to brute-force optimum
-        // We use C=16 chains, E=5 epochs, I=600 iterations
-        SAResult sa = solve_sa_serial(data, sep, 16, S, 5, 600, static_cast<uint64_t>(s));
-        // Evaluate the SA best schedule on the exact same fixed noise
+        // SA search with C=16 chains, iters=3000
+        SAResult sa = solve_sa_serial(data, sep, 16, S, 3000, static_cast<uint64_t>(s));
         EvalResult ev = evaluate_schedule_cpu(data, sep, sa.best_perm, noise);
-        float sa_J = ev.J;
+        float sa_J = ev.mean_cost;
 
         float relative_gap = (sa_J - true_opt_J) / true_opt_J;
         if (relative_gap <= 0.005f) { // Within 0.5%
@@ -50,6 +48,5 @@ TEST_CASE("Brute-force optimum vs SA on n=8, S=500", "[baselines]") {
     }
 
     INFO("Success count: " << success_count << " / " << NUM_SEEDS);
-    // Gate: >= 90% (18/20)
     CHECK(success_count >= 18);
 }

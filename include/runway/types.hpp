@@ -113,7 +113,6 @@ struct NoiseData {
     int n = 0; // Number of aircraft
     // Layout: aircraft-major -> delay[a * S + s]
     std::vector<float> delay;
-    std::vector<float> mult;
     std::vector<float> closeA;
     std::vector<float> closeB;
 
@@ -121,7 +120,6 @@ struct NoiseData {
         n = num_aircraft;
         S = num_scenarios;
         delay.assign(n * S, 0.0f);
-        mult.assign(S, 1.0f);
         closeA.assign(S, 0.0f);
         closeB.assign(S, 0.0f);
     }
@@ -132,21 +130,12 @@ struct SimMetrics {
     int misses = 0;
 };
 
-struct ObjectiveWeights {
-    float lambda_std = 1.0f;
-    float m_penalty = 5.0f;
-};
-
 struct EvalResult {
-    float J = 0.0f;
+    float J = 0.0f;            // In simplified model: J == mean_cost
     float mean_cost = 0.0f;
-    float std_cost = 0.0f;
     float p95 = 0.0f;
-    float cvar95 = 0.0f;
-    float miss_prob = 0.0f;
+    float late_pct = 0.0f;      // Average share of aircraft finishing after latest deadline
     float emergency_mean_delay = 0.0f;
-    float emergency_max_delay = 0.0f;
-    float plan_deviation = 0.0f;
     std::vector<float> per_scenario_costs;
 };
 

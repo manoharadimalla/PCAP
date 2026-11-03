@@ -11,7 +11,6 @@ SAResult solve_brute_force(
     const AircraftData& data,
     const SeparationMatrix& sep,
     const NoiseData& noise,
-    float lambda_std,
     float m_penalty
 ) {
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -25,30 +24,24 @@ SAResult solve_brute_force(
     long long total_evals = 0;
 
     int S = noise.S;
-    std::vector<float> costs(S);
 
     do {
         double sum_cost = 0.0;
-        double sum_sq_cost = 0.0;
         for (int s = 0; s < S; ++s) {
             SimMetrics m = simulate_one(
                 perm.data(), n, s, S,
                 data.ready.data(), data.target.data(), data.latest.data(),
                 data.weight.data(), data.cls.data(), sep.data,
-                noise.delay.data(), noise.mult[s],
+                noise.delay.data(),
                 noise.closeA[s], noise.closeB[s],
-                sep.triangle_ok, m_penalty
+                m_penalty
             );
             sum_cost += m.cost;
-            sum_sq_cost += static_cast<double>(m.cost) * m.cost;
         }
         float mean = static_cast<float>(sum_cost / S);
-        double var = (sum_sq_cost / S) - (static_cast<double>(mean) * mean);
-        float std_val = static_cast<float>(var > 0.0 ? std::sqrt(var) : 0.0);
-        float J = mean + lambda_std * std_val;
 
-        if (J < best_J) {
-            best_J = J;
+        if (mean < best_J) {
+            best_J = mean;
             best_perm = perm;
         }
         total_evals++;

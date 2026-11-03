@@ -41,35 +41,17 @@ static std::string float_array_to_json(const std::vector<float>& vec, size_t lim
     return oss.str();
 }
 
-static std::string convergence_to_json(const std::vector<ConvergencePoint>& pts) {
-    std::ostringstream oss;
-    oss << "[";
-    for (size_t i = 0; i < pts.size(); ++i) {
-        if (i > 0) oss << ", ";
-        oss << "{\"epoch\": " << pts[i].epoch
-            << ", \"best_J\": " << pts[i].best_J
-            << ", \"elapsed_s\": " << pts[i].elapsed_s << "}";
-    }
-    oss << "]";
-    return oss.str();
-}
-
 static std::string eval_metrics_to_json(const EvalResult& r) {
     std::ostringstream oss;
-    oss << "{\"J\": " << r.J
-        << ", \"mean_cost\": " << r.mean_cost
-        << ", \"std_cost\": " << r.std_cost
+    oss << "{\"mean_cost\": " << r.mean_cost
         << ", \"p95\": " << r.p95
-        << ", \"cvar95\": " << r.cvar95
-        << ", \"miss_prob\": " << r.miss_prob
-        << ", \"emergency_mean_delay\": " << r.emergency_mean_delay
-        << ", \"emergency_max_delay\": " << r.emergency_max_delay
-        << ", \"plan_dev\": " << r.plan_deviation << "}";
+        << ", \"late_pct\": " << r.late_pct
+        << ", \"emergency_mean_delay\": " << r.emergency_mean_delay << "}";
     return oss.str();
 }
 
 void print_usage() {
-    std::cout << "RunwayMC — GPU-Accelerated Robust Runway Scheduling under Uncertainty\n"
+    std::cout << "RunwayMC — Robust Runway Scheduling under Uncertainty\n"
               << "\n"
               << "Mandatory Disclaimer:\n"
               << "  This is an academic simulation with simplified separation standards.\n"
@@ -77,17 +59,13 @@ void print_usage() {
               << "Commands:\n"
               << "  runway info\n"
               << "  runway validate --instance <file> [--separation <file.csv>]\n"
-              << "  runway replay   --instance <file> --perm <file>|fcfs --scenario-index <int> --seed <int>\n"
-              << "                  [--separation <file.csv>] [--penalty <float>] [--p-close <float>]\n"
               << "  runway gen      --n <int> --rho <float> --seed <int> --out <file>\n"
               << "  runway eval     --instance <file> --perm fcfs|<file> --scenarios <int> --seed <int>\n"
               << "  runway solve    --instance <file> --impl serial|omp|cuda|random|brute\n"
-              << "                  --chains <int> --scenarios <int> --iters <int> --epochs <int>\n"
-              << "                  [--lambda <float>] [--penalty <float>] [--seed <int>]\n"
-              << "                  [--threads <int>] [--omp-mode chains|scenarios|hybrid]\n"
-              << "                  [--block <int>] [--kernel k1|k2|k3] [--out <json/csv>]\n"
-              << "                  [--progress] [--dump-costs <int>] [--separation <file.csv>]\n"
-              << "                  [--s-final <int>]\n"
+              << "                  --chains <int> --scenarios <int> --iters <int>\n"
+              << "                  [--seed <int>] [--threads <int>] [--omp-mode chains|scenarios]\n"
+              << "                  [--out <json>] [--progress] [--dump-costs <int>]\n"
+              << "                  [--separation <file.csv>] [--s-final <int>]\n"
               << "  runway final    --instance <file> --perm <file> --scenarios <int> --seed <int>\n";
 }
 
@@ -160,137 +138,62 @@ int main(int argc, char* argv[]) {
                 if (!std::getline(fin, line)) {
                     errors.push_back({0, "instance", "Instance file is empty"});
                 } else {
-                    int data_row = 0;
+                    int row = 0;
                     std::unordered_set<int> seen_ids;
-                    int valid_aircraft_count = 0;
-
                     while (std::getline(fin, line)) {
-                        if (line.empty() || line[0] == '#') continue;
-
+                        row++;
+                        if (line.empty()) continue;
                         std::stringstream ss(line);
-                        std::string token;
-                        std::vector<std::string> parts;
-                        while (std::getline(ss, token, ',')) {
-                            size_t first = token.find_first_not_of(" \t\r\n");
-                            size_t last = token.find_last_not_of(" \t\r\n");
-                            if (first == std::string::npos) parts.push_back("");
-                            else parts.push_back(token.substr(first, last - first + 1));
-                        }
+                        std::string sid, sop, swake, sready, starget, slatest, sprio, sweight;
 
-                        if (parts.size() < 8) {
-                            errors.push_back({data_row, "row", "Expected at least 8 columns, got " + std::to_string(parts.size())});
-                            data_row++;
+                        if (!std::getline(ss, sid, ',') || !std::getline(ss, sop, ',') ||
+                            !std::getline(ss, swake, ',') || !std::getline(ss, sready, ',') ||
+                            !std::getline(ss, starget, ',') || !std::getline(ss, slatest, ',') ||
+                            !std::getline(ss, sprio, ',') || !std::getline(ss, sweight, ',')) {
+                            errors.push_back({row, "format", "Missing required CSV columns in row " + std::to_string(row)});
                             continue;
                         }
 
-                        // 1. id
-                        int ac_id = 0;
-                        bool id_ok = false;
+                        int id = 0;
                         try {
-                            ac_id = std::stoi(parts[0]);
-                            id_ok = true;
-                        } catch (...) {
-                            errors.push_back({data_row, "id", "Invalid integer for id: " + parts[0]});
-                        }
-                        if (id_ok) {
-                            if (seen_ids.count(ac_id)) {
-                                errors.push_back({data_row, "id", "Duplicate aircraft ID: " + std::to_string(ac_id)});
-                            } else {
-                                seen_ids.insert(ac_id);
+                            id = std::stoi(sid);
+                            if (seen_ids.count(id)) {
+                                errors.push_back({row, "id", "Duplicate aircraft ID " + std::to_string(id)});
                             }
-                        }
-
-                        // 2. op (0, 1, ARR, DEP)
-                        std::string op_str = parts[1];
-                        std::string op_upper = op_str;
-                        for (char& c : op_upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-                        if (op_upper != "0" && op_upper != "1" && op_upper != "ARR" && op_upper != "DEP") {
-                            errors.push_back({data_row, "op", "Invalid op value '" + op_str + "': must be 0, 1, ARR, or DEP"});
-                        }
-
-                        // 3. wake (0, 1, 2, H, M, L, Heavy, Medium, Light)
-                        std::string wake_str = parts[2];
-                        std::string wake_upper = wake_str;
-                        for (char& c : wake_upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-                        if (wake_upper != "0" && wake_upper != "1" && wake_upper != "2" &&
-                            wake_upper != "H" && wake_upper != "M" && wake_upper != "L" &&
-                            wake_upper != "HEAVY" && wake_upper != "MEDIUM" && wake_upper != "LIGHT") {
-                            errors.push_back({data_row, "wake", "Invalid wake value '" + wake_str + "': must be 0, 1, 2, H, M, or L"});
-                        }
-
-                        // 4. ready, target, latest
-                        float ready = 0.0f, target = 0.0f, latest = 0.0f;
-                        bool ready_ok = false, target_ok = false, latest_ok = false;
-                        try {
-                            ready = std::stof(parts[3]);
-                            ready_ok = true;
+                            seen_ids.insert(id);
                         } catch (...) {
-                            errors.push_back({data_row, "ready", "Invalid float for ready: " + parts[3]});
-                        }
-                        try {
-                            target = std::stof(parts[4]);
-                            target_ok = true;
-                        } catch (...) {
-                            errors.push_back({data_row, "target", "Invalid float for target: " + parts[4]});
-                        }
-                        try {
-                            latest = std::stof(parts[5]);
-                            latest_ok = true;
-                        } catch (...) {
-                            errors.push_back({data_row, "latest", "Invalid float for latest: " + parts[5]});
+                            errors.push_back({row, "id", "Invalid non-integer aircraft ID: " + sid});
                         }
 
-                        if (ready_ok && target_ok && ready > target) {
-                            errors.push_back({data_row, "ready", "ready (" + parts[3] + ") must be <= target (" + parts[4] + ")"});
-                        }
-                        if (target_ok && latest_ok && target > latest) {
-                            errors.push_back({data_row, "target", "target (" + parts[4] + ") must be <= latest (" + parts[5] + ")"});
-                        }
-                        if (ready_ok && latest_ok && ready > latest && target <= latest) {
-                            errors.push_back({data_row, "ready", "ready (" + parts[3] + ") must be <= latest (" + parts[5] + ")"});
-                        }
+                        float ready = 0.0f, target = 0.0f, latest = 0.0f, weight = 1.0f;
+                        try { ready = std::stof(sready); } catch (...) { errors.push_back({row, "ready", "Invalid float: " + sready}); }
+                        try { target = std::stof(starget); } catch (...) { errors.push_back({row, "target", "Invalid float: " + starget}); }
+                        try { latest = std::stof(slatest); } catch (...) { errors.push_back({row, "latest", "Invalid float: " + slatest}); }
+                        try { weight = std::stof(sweight); } catch (...) { errors.push_back({row, "weight", "Invalid float: " + sweight}); }
 
-                        // 5. priority (0, 1, 2, Normal, High, Emergency)
-                        std::string prio_str = parts[6];
-                        std::string prio_upper = prio_str;
-                        for (char& c : prio_upper) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
-                        if (prio_upper != "0" && prio_upper != "1" && prio_upper != "2" &&
-                            prio_upper != "NORMAL" && prio_upper != "HIGH" && prio_upper != "EMERGENCY") {
-                            errors.push_back({data_row, "priority", "Invalid priority value '" + prio_str + "': must be 0, 1, 2, Normal, High, or Emergency"});
+                        if (ready > target + 1e-4f) {
+                            errors.push_back({row, "target", "ready (" + sready + ") > target (" + starget + ")"});
                         }
-
-                        // 6. weight (> 0)
-                        float weight = 0.0f;
-                        bool weight_ok = false;
-                        try {
-                            weight = std::stof(parts[7]);
-                            weight_ok = true;
-                        } catch (...) {
-                            errors.push_back({data_row, "weight", "Invalid float for weight: " + parts[7]});
+                        if (target > latest + 1e-4f) {
+                            errors.push_back({row, "latest", "target (" + starget + ") > latest (" + slatest + ")"});
                         }
-                        if (weight_ok && weight <= 0.0f) {
-                            errors.push_back({data_row, "weight", "Weight must be > 0 (got " + parts[7] + ")"});
+                        if (weight <= 0.0f) {
+                            errors.push_back({row, "weight", "weight must be > 0, got " + sweight});
                         }
-
-                        valid_aircraft_count++;
-                        data_row++;
                     }
-
-                    if (valid_aircraft_count < 1) {
-                        errors.push_back({0, "instance", "Instance must contain at least 1 aircraft (n >= 1)"});
+                    if (row == 0) {
+                        errors.push_back({0, "instance", "Instance has 0 aircraft records (n >= 1 required)"});
                     }
                 }
             }
         }
 
-        bool ok = errors.empty();
-        std::cout << "{\"ok\": " << (ok ? "true" : "false")
-                  << ", \"errors\": [";
+        std::cout << "{\"ok\": " << (errors.empty() ? "true" : "false") << ", \"errors\": [";
         for (size_t i = 0; i < errors.size(); ++i) {
             if (i > 0) std::cout << ", ";
             std::cout << "{\"row\": " << errors[i].row
-                      << ", \"column\": \"" << errors[i].column << "\""
-                      << ", \"message\": \"" << errors[i].message << "\"}";
+                      << ", \"column\": \"" << errors[i].column
+                      << "\", \"message\": \"" << errors[i].message << "\"}";
         }
         std::cout << "], \"warnings\": [";
         for (size_t i = 0; i < warnings.size(); ++i) {
@@ -298,88 +201,7 @@ int main(int argc, char* argv[]) {
             std::cout << "\"" << warnings[i] << "\"";
         }
         std::cout << "], \"triangle_ok\": " << (triangle_ok ? "true" : "false") << "}\n";
-
-        return ok ? 0 : 1;
-    } else if (cmd == "replay") {
-        std::string inst_file;
-        std::string perm_arg = "fcfs";
-        int scenario_idx = 0;
-        uint64_t seed = 1;
-        std::string sep_file;
-        float m_penalty = 5.0f;
-        float p_close = 0.20f;
-
-        for (int i = 2; i < argc; ++i) {
-            std::string arg = argv[i];
-            if (arg == "--instance" && i + 1 < argc) inst_file = argv[++i];
-            else if (arg == "--perm" && i + 1 < argc) perm_arg = argv[++i];
-            else if (arg == "--scenario-index" && i + 1 < argc) scenario_idx = std::stoi(argv[++i]);
-            else if (arg == "--seed" && i + 1 < argc) seed = std::stoull(argv[++i]);
-            else if (arg == "--separation" && i + 1 < argc) sep_file = argv[++i];
-            else if (arg == "--penalty" && i + 1 < argc) m_penalty = std::stof(argv[++i]);
-            else if (arg == "--p-close" && i + 1 < argc) p_close = std::stof(argv[++i]);
-        }
-
-        AircraftData data;
-        if (!load_instance(inst_file, data)) return 1;
-
-        SeparationMatrix sep;
-        if (!sep_file.empty()) {
-            if (!load_separation_matrix(sep_file, sep)) {
-                std::cerr << "Failed to load separation matrix from " << sep_file << "\n";
-                return 1;
-            }
-        } else {
-            sep = get_default_separation_matrix();
-        }
-
-        std::vector<int> perm;
-        if (perm_arg == "fcfs") {
-            perm = solve_fcfs(data);
-        } else {
-            if (!load_schedule(perm_arg, perm)) {
-                std::cerr << "Failed to load schedule from " << perm_arg << "\n";
-                return 1;
-            }
-        }
-
-        if (scenario_idx < 0) {
-            std::cerr << "Invalid scenario index: " << scenario_idx << "\n";
-            return 1;
-        }
-
-        int S = scenario_idx + 1;
-        NoiseData noise;
-        generate_noise_cpu(noise, data, S, seed, p_close);
-
-        std::vector<float> realized_times(data.n, 0.0f);
-        simulate_one_with_times(
-            perm.data(), data.n, scenario_idx, noise.S,
-            data.ready.data(), data.target.data(), data.latest.data(),
-            data.weight.data(), data.cls.data(), sep.data,
-            noise.delay.data(), noise.mult[scenario_idx],
-            noise.closeA[scenario_idx], noise.closeB[scenario_idx],
-            realized_times.data(), sep.triangle_ok, m_penalty
-        );
-
-        std::cout << "{\n"
-                  << "  \"scenario\": " << scenario_idx << ",\n"
-                  << "  \"weather_mult\": " << noise.mult[scenario_idx] << ",\n"
-                  << "  \"closure\": [" << noise.closeA[scenario_idx] << ", " << noise.closeB[scenario_idx] << "],\n"
-                  << "  \"aircraft\": [\n";
-        for (int k = 0; k < data.n; ++k) {
-            int a = perm[k];
-            float ready_real = data.ready[a] + noise.delay[a * noise.S + scenario_idx];
-            float t = realized_times[k];
-            float delay = std::max(0.0f, t - data.target[a]);
-            std::cout << "    {\"id\": " << data.id[a]
-                      << ", \"ready_real\": " << ready_real
-                      << ", \"time\": " << t
-                      << ", \"delay\": " << delay << "}"
-                      << (k + 1 < data.n ? ",\n" : "\n");
-        }
-        std::cout << "  ]\n}\n";
-        return 0;
+        return errors.empty() ? 0 : 1;
     } else if (cmd == "gen") {
         int n = 50;
         float rho = 1.2f;
@@ -410,8 +232,6 @@ int main(int argc, char* argv[]) {
         std::string perm_arg = "fcfs";
         int scenarios = 1024;
         uint64_t seed = 1;
-        float lambda_std = 1.0f;
-        float m_penalty = 5.0f;
 
         for (int i = 2; i < argc; ++i) {
             std::string arg = argv[i];
@@ -419,8 +239,6 @@ int main(int argc, char* argv[]) {
             else if (arg == "--perm" && i + 1 < argc) perm_arg = argv[++i];
             else if (arg == "--scenarios" && i + 1 < argc) scenarios = std::stoi(argv[++i]);
             else if (arg == "--seed" && i + 1 < argc) seed = std::stoull(argv[++i]);
-            else if (arg == "--lambda" && i + 1 < argc) lambda_std = std::stof(argv[++i]);
-            else if (arg == "--penalty" && i + 1 < argc) m_penalty = std::stof(argv[++i]);
         }
 
         AircraftData data;
@@ -440,32 +258,24 @@ int main(int argc, char* argv[]) {
         NoiseData noise;
         generate_noise_cpu(noise, data, scenarios, seed);
 
-        EvalResult res = evaluate_schedule_cpu(data, sep, perm, noise, lambda_std, m_penalty);
+        EvalResult res = evaluate_schedule_cpu(data, sep, perm, noise);
         std::cout << std::fixed << std::setprecision(4)
-                  << "J: " << res.J << "\n"
                   << "mean_cost: " << res.mean_cost << "\n"
-                  << "std_cost: " << res.std_cost << "\n"
                   << "p95: " << res.p95 << "\n"
-                  << "cvar95: " << res.cvar95 << "\n"
-                  << "miss_prob: " << res.miss_prob << "\n"
-                  << "plan_dev: " << res.plan_deviation << "\n";
+                  << "late_pct: " << res.late_pct << "\n"
+                  << "emergency_mean_delay: " << res.emergency_mean_delay << "\n";
         return 0;
     } else if (cmd == "solve") {
         auto solve_start_time = std::chrono::high_resolution_clock::now();
 
         std::string inst_file;
         std::string impl = "serial";
-        int chains = 64;
+        int chains = 16;
         int scenarios = 1024;
-        int iters = 2000;
-        int epochs = 20;
-        float lambda_std = 1.0f;
-        float m_penalty = 5.0f;
+        int iters = 1000;
         uint64_t seed = 1;
         int threads = 0;
         std::string omp_mode = "chains";
-        [[maybe_unused]] int block_size = 256;
-        [[maybe_unused]] std::string kernel = "k3";
         std::string out_file;
         bool progress = false;
         int dump_costs = 0;
@@ -479,14 +289,9 @@ int main(int argc, char* argv[]) {
             else if (arg == "--chains" && i + 1 < argc) chains = std::stoi(argv[++i]);
             else if (arg == "--scenarios" && i + 1 < argc) scenarios = std::stoi(argv[++i]);
             else if (arg == "--iters" && i + 1 < argc) iters = std::stoi(argv[++i]);
-            else if (arg == "--epochs" && i + 1 < argc) epochs = std::stoi(argv[++i]);
-            else if (arg == "--lambda" && i + 1 < argc) lambda_std = std::stof(argv[++i]);
-            else if (arg == "--penalty" && i + 1 < argc) m_penalty = std::stof(argv[++i]);
             else if (arg == "--seed" && i + 1 < argc) seed = std::stoull(argv[++i]);
             else if (arg == "--threads" && i + 1 < argc) threads = std::stoi(argv[++i]);
             else if (arg == "--omp-mode" && i + 1 < argc) omp_mode = argv[++i];
-            else if (arg == "--block" && i + 1 < argc) block_size = std::stoi(argv[++i]);
-            else if (arg == "--kernel" && i + 1 < argc) kernel = argv[++i];
             else if (arg == "--out" && i + 1 < argc) out_file = argv[++i];
             else if (arg == "--progress") progress = true;
             else if (arg == "--dump-costs" && i + 1 < argc) dump_costs = std::stoi(argv[++i]);
@@ -509,55 +314,48 @@ int main(int argc, char* argv[]) {
 
         SAResult res;
         if (impl == "serial") {
-            res = solve_sa_serial(data, sep, chains, scenarios, epochs, iters, seed, lambda_std, m_penalty, progress);
+            res = solve_sa_serial(data, sep, chains, scenarios, iters, seed, 5.0f, progress);
         } else if (impl == "omp") {
 #if defined(RUNWAY_HAS_OPENMP)
-            res = solve_sa_omp(data, sep, chains, scenarios, epochs, iters, seed, omp_mode, threads, lambda_std, m_penalty, progress);
+            res = solve_sa_omp(data, sep, chains, scenarios, iters, seed, omp_mode, threads, 5.0f, progress);
 #else
             std::cerr << "OpenMP not compiled in this build.\n";
             return 1;
 #endif
-        } else if (impl == "cuda") {
-#if defined(RUNWAY_HAS_CUDA)
-            res = solve_sa_cuda(data, sep, chains, scenarios, epochs, iters, seed, kernel, block_size, lambda_std, m_penalty);
-#else
-            std::cerr << "CUDA not compiled in this build.\n";
-            return 1;
-#endif
         } else if (impl == "random") {
-            int total_evals = chains * epochs * iters;
-            res = solve_random_search(data, sep, scenarios, total_evals, seed, lambda_std, m_penalty);
+            int total_evals = chains * iters;
+            res = solve_random_search(data, sep, scenarios, total_evals, seed, 5.0f);
         } else if (impl == "brute") {
-            if (data.n > 10) {
-                std::cerr << "Brute force only supported for n <= 10 (got n=" << data.n << ").\n";
+            if (data.n > 9) {
+                std::cerr << "Brute force only supported for n <= 9 (got n=" << data.n << ").\n";
                 return 1;
             }
             NoiseData noise;
             generate_noise_cpu(noise, data, scenarios, seed);
-            res = solve_brute_force(data, sep, noise, lambda_std, m_penalty);
+            res = solve_brute_force(data, sep, noise, 5.0f);
         } else {
             std::cerr << "Unknown impl: " << impl << "\n";
             return 1;
         }
 
-        // Out-of-sample evaluation
-        NoiseData oos_noise;
-        generate_noise_cpu(oos_noise, data, s_final, 99999);
-        res.out_of_sample_eval = evaluate_schedule_cpu(data, sep, res.best_perm, oos_noise, lambda_std, m_penalty);
+        // Test evaluation on fresh 20,000 scenarios
+        NoiseData test_noise;
+        generate_noise_cpu(test_noise, data, s_final, 99999);
+        res.out_of_sample_eval = evaluate_schedule_cpu(data, sep, res.best_perm, test_noise);
 
-        // FCFS permutation and evaluation
+        // Baseline FCFS schedule evaluated on identical test days
         std::vector<int> perm_fcfs = solve_fcfs(data);
-        EvalResult fcfs_eval = evaluate_schedule_cpu(data, sep, perm_fcfs, oos_noise, lambda_std, m_penalty);
+        EvalResult fcfs_eval = evaluate_schedule_cpu(data, sep, perm_fcfs, test_noise);
 
-        // Deterministic planned times (zero noise)
+        // Planned times (zero noise)
         std::vector<float> planned_times_fcfs(data.n, 0.0f);
         std::vector<float> zero_delay(data.n, 0.0f);
         simulate_one_with_times(
             perm_fcfs.data(), data.n, 0, 1,
             data.ready.data(), data.target.data(), data.latest.data(),
             data.weight.data(), data.cls.data(), sep.data,
-            zero_delay.data(), 1.0f, 0.0f, 0.0f,
-            planned_times_fcfs.data(), sep.triangle_ok, m_penalty
+            zero_delay.data(), 0.0f, 0.0f,
+            planned_times_fcfs.data()
         );
 
         std::vector<float> planned_times_best(data.n, 0.0f);
@@ -565,8 +363,8 @@ int main(int argc, char* argv[]) {
             res.best_perm.data(), data.n, 0, 1,
             data.ready.data(), data.target.data(), data.latest.data(),
             data.weight.data(), data.cls.data(), sep.data,
-            zero_delay.data(), 1.0f, 0.0f, 0.0f,
-            planned_times_best.data(), sep.triangle_ok, m_penalty
+            zero_delay.data(), 0.0f, 0.0f,
+            planned_times_best.data()
         );
 
         auto solve_end_time = std::chrono::high_resolution_clock::now();
@@ -583,16 +381,13 @@ int main(int argc, char* argv[]) {
 
         std::cout << std::fixed << std::setprecision(4)
                   << "Solve completed (" << impl << "):\n"
-                  << "  J (in-sample):  " << res.in_sample_J << "\n"
-                  << "  J (out-of-sample): " << res.out_of_sample_eval.J << "\n"
-                  << "  Mean Cost (OOS):" << res.out_of_sample_eval.mean_cost << "\n"
-                  << "  Std Cost (OOS): " << res.out_of_sample_eval.std_cost << "\n"
-                  << "  P95 Cost (OOS): " << res.out_of_sample_eval.p95 << "\n"
-                  << "  CVaR95 (OOS):   " << res.out_of_sample_eval.cvar95 << "\n"
-                  << "  Miss Prob (OOS):" << res.out_of_sample_eval.miss_prob << "\n"
-                  << "  Plan Dev (OOS): " << res.out_of_sample_eval.plan_deviation << "\n"
-                  << "  Total Time (ms):" << res.total_time_ms << "\n"
-                  << "  Sims/sec:       " << res.sim_per_sec << "\n";
+                  << "  Train Mean Cost:  " << res.in_sample_J << "\n"
+                  << "  Test Mean Cost:   " << res.out_of_sample_eval.mean_cost << "\n"
+                  << "  Test P95 Cost:    " << res.out_of_sample_eval.p95 << "\n"
+                  << "  Test Late Pct:    " << res.out_of_sample_eval.late_pct << "\n"
+                  << "  Test Emerg Delay: " << res.out_of_sample_eval.emergency_mean_delay << "\n"
+                  << "  Total Time (ms):  " << res.total_time_ms << "\n"
+                  << "  Sims/sec:         " << res.sim_per_sec << "\n";
 
         if (!out_file.empty()) {
             std::filesystem::path p(out_file);
@@ -607,8 +402,7 @@ int main(int argc, char* argv[]) {
                      << "  \"seed\": " << seed << ",\n"
                      << "  \"n\": " << data.n << ",\n"
                      << "  \"params\": {\"chains\": " << chains << ", \"scenarios\": " << scenarios
-                     << ", \"iters\": " << iters << ", \"epochs\": " << epochs
-                     << ", \"lambda\": " << lambda_std << ", \"penalty\": " << m_penalty << "},\n"
+                     << ", \"iters\": " << iters << "},\n"
                      << "  \"perm_fcfs\": " << int_array_to_json(perm_fcfs) << ",\n"
                      << "  \"perm_best\": " << int_array_to_json(res.best_perm) << ",\n"
                      << "  \"planned_times_fcfs\": " << float_array_to_json(planned_times_fcfs) << ",\n"
@@ -619,7 +413,6 @@ int main(int argc, char* argv[]) {
                      << "  },\n"
                      << "  \"costs_fcfs\": " << float_array_to_json(fcfs_eval.per_scenario_costs, dc) << ",\n"
                      << "  \"costs_best\": " << float_array_to_json(res.out_of_sample_eval.per_scenario_costs, dc) << ",\n"
-                     << "  \"convergence\": " << convergence_to_json(res.convergence) << ",\n"
                      << "  \"timings\": {\"kernel_ms\": " << res.kernel_time_ms
                      << ", \"end_to_end_ms\": " << end_to_end_ms
                      << ", \"sim_per_s\": " << res.sim_per_sec << "},\n"
@@ -636,8 +429,6 @@ int main(int argc, char* argv[]) {
         std::string perm_file;
         int scenarios = 20000;
         uint64_t seed = 999;
-        float lambda_std = 1.0f;
-        float m_penalty = 5.0f;
 
         for (int i = 2; i < argc; ++i) {
             std::string arg = argv[i];
@@ -645,8 +436,6 @@ int main(int argc, char* argv[]) {
             else if (arg == "--perm" && i + 1 < argc) perm_file = argv[++i];
             else if (arg == "--scenarios" && i + 1 < argc) scenarios = std::stoi(argv[++i]);
             else if (arg == "--seed" && i + 1 < argc) seed = std::stoull(argv[++i]);
-            else if (arg == "--lambda" && i + 1 < argc) lambda_std = std::stof(argv[++i]);
-            else if (arg == "--penalty" && i + 1 < argc) m_penalty = std::stof(argv[++i]);
         }
 
         AircraftData data;
@@ -662,18 +451,13 @@ int main(int argc, char* argv[]) {
         NoiseData noise;
         generate_noise_cpu(noise, data, scenarios, seed);
 
-        EvalResult res = evaluate_schedule_cpu(data, sep, perm, noise, lambda_std, m_penalty);
+        EvalResult res = evaluate_schedule_cpu(data, sep, perm, noise);
         std::cout << std::fixed << std::setprecision(4)
-                  << "Out-of-sample final evaluation (" << scenarios << " scenarios):\n"
-                  << "  J:              " << res.J << "\n"
+                  << "Test Evaluation (" << scenarios << " test days):\n"
                   << "  Mean Cost:      " << res.mean_cost << "\n"
-                  << "  Std Cost:       " << res.std_cost << "\n"
                   << "  P95 Cost:       " << res.p95 << "\n"
-                  << "  CVaR95:         " << res.cvar95 << "\n"
-                  << "  Miss Prob:      " << res.miss_prob << "\n"
-                  << "  Plan Dev:       " << res.plan_deviation << "\n"
-                  << "  Emergency Mean: " << res.emergency_mean_delay << "\n"
-                  << "  Emergency Max:  " << res.emergency_max_delay << "\n";
+                  << "  Late Pct:       " << res.late_pct << "\n"
+                  << "  Emergency Mean: " << res.emergency_mean_delay << "\n";
         return 0;
     } else {
         std::cerr << "Unknown command: " << cmd << "\n";

@@ -1,0 +1,3 @@
+strategy,test_mean_cost,test_p95_cost,test_late_pct,emergency_mean_delay
+"Deterministic (Planned with S=1, no randomness)",27046.6,58229.6,0.184552,90.2183
+Robust RunwayMC (Planned with S=1024 random days),15063.2,51279.1,0.05803,126.665

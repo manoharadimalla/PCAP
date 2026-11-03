@@ -28,16 +28,6 @@ void generate_noise_cpu(
     XorShift64Star rng(seed);
 
     for (int s = 0; s < S; ++s) {
-        // Weather separation multiplier
-        float r_w = rng.next_float();
-        if (r_w < 0.70f) {
-            noise.mult[s] = 1.0f;
-        } else if (r_w < 0.90f) {
-            noise.mult[s] = 1.15f;
-        } else {
-            noise.mult[s] = 1.30f;
-        }
-
         // Runway closure window
         float r_c = rng.next_float();
         if (r_c < p_close) {

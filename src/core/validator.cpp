@@ -44,14 +44,13 @@ bool validate_schedule(
         perm.data(), n, scenario_idx, noise.S,
         data.ready.data(), data.target.data(), data.latest.data(),
         data.weight.data(), data.cls.data(), sep.data,
-        noise.delay.data(), noise.mult[scenario_idx],
+        noise.delay.data(),
         noise.closeA[scenario_idx], noise.closeB[scenario_idx],
-        times.data(), sep.triangle_ok
+        times.data()
     );
 
     float closeA = noise.closeA[scenario_idx];
     float closeB = noise.closeB[scenario_idx];
-    float m_s = noise.mult[scenario_idx];
 
     // 1. Ready time checks
     for (int k = 0; k < n; ++k) {
@@ -88,7 +87,7 @@ bool validate_schedule(
         for (int j = i + 1; j < n; ++j) {
             int follower = perm[j];
             int cls_follower = data.cls[follower];
-            float req_sep = m_s * sep.get(cls_leader, cls_follower);
+            float req_sep = sep.get(cls_leader, cls_follower);
             float actual_sep = times[j] - times[i];
             if (actual_sep < req_sep - 1e-3f) {
                 if (error_msg) {

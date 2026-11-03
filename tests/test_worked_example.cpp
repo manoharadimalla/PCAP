@@ -28,8 +28,8 @@ TEST_CASE("Worked example Section 4.7", "[worked_example]") {
             perm, 3, 0, 1,
             data.ready.data(), data.target.data(), data.latest.data(),
             data.weight.data(), data.cls.data(), sep.data,
-            delay, 1.0f, 0.0f, 0.0f,
-            times, false
+            delay, 0.0f, 0.0f,
+            times
         );
 
         CHECK(times[0] == 0.0f);
@@ -44,8 +44,8 @@ TEST_CASE("Worked example Section 4.7", "[worked_example]") {
             perm, 3, 0, 1,
             data.ready.data(), data.target.data(), data.latest.data(),
             data.weight.data(), data.cls.data(), sep.data,
-            delay, 1.0f, 0.0f, 0.0f,
-            times, false
+            delay, 0.0f, 0.0f,
+            times
         );
 
         CHECK(times[0] == 0.0f);
@@ -60,8 +60,8 @@ TEST_CASE("Worked example Section 4.7", "[worked_example]") {
             perm, 3, 0, 1,
             data.ready.data(), data.target.data(), data.latest.data(),
             data.weight.data(), data.cls.data(), sep.data,
-            delay, 1.0f, 50.0f, 100.0f,
-            times, false
+            delay, 50.0f, 100.0f,
+            times
         );
 
         CHECK(times[0] == 0.0f);
@@ -76,8 +76,8 @@ TEST_CASE("Worked example Section 4.7", "[worked_example]") {
             perm, 3, 0, 1,
             data.ready.data(), data.target.data(), data.latest.data(),
             data.weight.data(), data.cls.data(), sep.data,
-            delay, 1.0f, 50.0f, 50.0f,
-            times, false
+            delay, 50.0f, 50.0f,
+            times
         );
 
         CHECK(m.cost == 198.0f);

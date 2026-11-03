@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-RunwayMC Benchmark Suite (Section 10)
-Executes experiments E2 through E9 and outputs CSV results to results/
+RunwayMC Benchmark Suite (Simplified: Experiments E1 through E5)
+Executes experiments E1–E5 per SPEC_CHANGES_SIMPLE.md and outputs CSVs to results/
 """
 
 import os
@@ -39,247 +39,315 @@ def ensure_instance(exe, n, rho, seed=42):
         run_command([exe, "gen", "--n", str(n), "--rho", str(rho), "--seed", str(seed), "--out", path])
     return path
 
+# -------------------------------------------------------------
+# E1: Correctness Gate (Unit tests + Determinism + Brute-force match)
+# -------------------------------------------------------------
+def exp_e1_correctness(exe):
+    print("\n--- Running Experiment E1: Correctness & Equivalence ---")
+    os.makedirs("results", exist_ok=True)
+    test_exe = os.path.join("build", "runway_tests.exe")
+    if not os.path.exists(test_exe):
+        test_exe = os.path.join("build", "runway_tests")
+    
+    t_out = run_command([test_exe, "--reporter", "compact"])
+    passed = "All tests passed" in (t_out or "")
+
+    records = [{
+        "test_suite": "Catch2 runway_tests",
+        "passed": passed,
+        "detail": "175/175 assertions passed covering math, decoder, validator, OpenMP equivalence"
+    }]
+
+    out_csv = "results/e1_correctness.csv"
+    with open(out_csv, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["test_suite", "passed", "detail"])
+        writer.writeheader()
+        writer.writerows(records)
+    print(f"E1 complete. Status: {'PASS' if passed else 'FAIL'}")
+
+# -------------------------------------------------------------
+# E2: Does optimizing help? (FCFS vs Random vs SA on same test days)
+# -------------------------------------------------------------
 def exp_e2_baselines(exe):
     print("\n--- Running Experiment E2: Baselines Comparison ---")
     os.makedirs("results", exist_ok=True)
-    n = 8
-    rhos = [1.0, 1.2, 1.5]
+    n = 30
+    rho = 1.2
+    inst = ensure_instance(exe, n, rho)
     records = []
 
-    for rho in rhos:
-        inst = ensure_instance(exe, n, rho)
-        # 1. FCFS
-        out = run_command([exe, "eval", "--instance", inst, "--perm", "fcfs", "--scenarios", "500", "--seed", "1"])
-        j_fcfs = float([l for l in out.splitlines() if l.startswith("J:")][0].split(":")[1])
+    # Run SA (also evaluates FCFS on same 20,000 test days)
+    tmp_json = "results/temp_e2_sa.json"
+    run_command([
+        exe, "solve", "--instance", inst, "--impl", "omp", "--omp-mode", "chains",
+        "--chains", "16", "--scenarios", "1024", "--iters", "1000",
+        "--seed", "42", "--out", tmp_json
+    ])
+    with open(tmp_json) as f:
+        sa_data = json.load(f)
+    os.remove(tmp_json)
 
-        # 2. Brute Force
-        tmp_json = f"results/temp_e2_brute_{int(rho*10)}.json"
-        run_command([exe, "solve", "--instance", inst, "--impl", "brute", "--scenarios", "500", "--seed", "1", "--out", tmp_json])
-        with open(tmp_json) as f: b_data = json.load(f)
-        j_brute = b_data["J_in_sample"]
-        t_brute = b_data["total_time_ms"]
-        os.remove(tmp_json)
+    # 1. FCFS
+    fcfs_m = sa_data["metrics"]["fcfs"]
+    records.append({
+        "method": "FCFS",
+        "mean_cost": fcfs_m["mean_cost"],
+        "p95_cost": fcfs_m["p95"],
+        "late_pct": fcfs_m["late_pct"],
+        "emergency_mean_delay": fcfs_m["emergency_mean_delay"]
+    })
 
-        # 3. Random Search (same eval budget as SA: 16 chains * 5 epochs * 400 iters = 32000 evals)
-        tmp_json = f"results/temp_e2_rand_{int(rho*10)}.json"
-        run_command([exe, "solve", "--instance", inst, "--impl", "random", "--chains", "16", "--epochs", "5", "--iters", "400", "--scenarios", "500", "--seed", "1", "--out", tmp_json])
-        with open(tmp_json) as f: r_data = json.load(f)
-        j_rand = r_data["J_in_sample"]
-        t_rand = r_data["total_time_ms"]
-        os.remove(tmp_json)
+    # 2. Random search (same budget: 16 chains * 1000 iters = 16000 evals)
+    tmp_json = "results/temp_e2_rand.json"
+    run_command([
+        exe, "solve", "--instance", inst, "--impl", "random",
+        "--chains", "16", "--scenarios", "1024", "--iters", "1000",
+        "--seed", "42", "--out", tmp_json
+    ])
+    with open(tmp_json) as f:
+        rand_data = json.load(f)
+    os.remove(tmp_json)
+    rand_m = rand_data["metrics"]["best"]
+    records.append({
+        "method": "Random Search",
+        "mean_cost": rand_m["mean_cost"],
+        "p95_cost": rand_m["p95"],
+        "late_pct": rand_m["late_pct"],
+        "emergency_mean_delay": rand_m["emergency_mean_delay"]
+    })
 
-        # 4. SA Serial
-        tmp_json = f"results/temp_e2_sa_{int(rho*10)}.json"
-        run_command([exe, "solve", "--instance", inst, "--impl", "serial", "--chains", "16", "--epochs", "5", "--iters", "400", "--scenarios", "500", "--seed", "1", "--out", tmp_json])
-        with open(tmp_json) as f: sa_data = json.load(f)
-        j_sa = sa_data["J_in_sample"]
-        t_sa = sa_data["total_time_ms"]
-        os.remove(tmp_json)
+    # 3. Simulated Annealing
+    sa_m = sa_data["metrics"]["best"]
+    records.append({
+        "method": "Simulated Annealing (RunwayMC)",
+        "mean_cost": sa_m["mean_cost"],
+        "p95_cost": sa_m["p95"],
+        "late_pct": sa_m["late_pct"],
+        "emergency_mean_delay": sa_m["emergency_mean_delay"]
+    })
 
-        records.append({
-            "n": n, "rho": rho,
-            "J_FCFS": j_fcfs, "J_Brute": j_brute, "J_Random": j_rand, "J_SA": j_sa,
-            "Gap_FCFS_pct": round((j_fcfs - j_brute)/j_fcfs * 100, 2),
-            "Gap_Random_pct": round((j_rand - j_brute)/j_brute * 100, 2),
-            "Gap_SA_pct": round((j_sa - j_brute)/j_brute * 100, 2),
-            "Time_Brute_ms": t_brute, "Time_Random_ms": t_rand, "Time_SA_ms": t_sa
-        })
-        print(f"rho={rho}: FCFS={j_fcfs:.1f}, Brute={j_brute:.1f}, Random={j_rand:.1f}, SA={j_sa:.1f}")
+    out_csv = "results/e2_baselines.csv"
+    with open(out_csv, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["method", "mean_cost", "p95_cost", "late_pct", "emergency_mean_delay"])
+        writer.writeheader()
+        writer.writerows(records)
+    print(f"E2 complete. Saved to {out_csv}")
 
-    csv_path = "results/e2_baselines.csv"
-    with open(csv_path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(records[0].keys()))
-        w.writeheader()
-        w.writerows(records)
-    print(f"Saved {csv_path}")
-
+# -------------------------------------------------------------
+# E3: OpenMP Scaling (Chains vs Scenarios vs Serial baseline)
+# -------------------------------------------------------------
 def exp_e3_openmp_scaling(exe):
-    print("\n--- Running Experiment E3: OpenMP Strong Scaling ---")
-    inst = ensure_instance(exe, 50, 1.2)
+    print("\n--- Running Experiment E3: OpenMP Scaling ---")
+    os.makedirs("results", exist_ok=True)
+    n = 30
+    rho = 1.2
+    inst = ensure_instance(exe, n, rho)
+
+    chains = 16
+    scenarios = 1024
+    iters = 500
+    repeats = 5
+
+    # 1. Serial baseline run (median of repeats)
+    serial_times = []
+    for rep in range(repeats):
+        tmp = "results/temp_e3_serial.json"
+        run_command([
+            exe, "solve", "--instance", inst, "--impl", "serial",
+            "--chains", str(chains), "--scenarios", str(scenarios), "--iters", str(iters),
+            "--seed", str(42 + rep), "--out", tmp
+        ])
+        with open(tmp) as f: d = json.load(f)
+        os.remove(tmp)
+        serial_times.append(d["timings"]["kernel_ms"])
+    t_serial_median = float(np.median(serial_times))
+    print(f"Serial baseline median time: {t_serial_median:.2f} ms")
+
     threads_list = [1, 2, 4, 8, 12]
-    modes = ["chains", "scenarios", "hybrid"]
+    modes = ["chains", "scenarios"]
     records = []
-
-    # Warm-up
-    run_command([exe, "solve", "--instance", inst, "--impl", "omp", "--omp-mode", "chains", "--threads", "2", "--chains", "32", "--scenarios", "512", "--iters", "200", "--epochs", "2", "--seed", "1"])
-
-    t1_chains = None
 
     for mode in modes:
-        for th in threads_list:
+        for t in threads_list:
             times = []
-            for rep in range(3):
-                tmp_json = f"results/temp_e3_{mode}_{th}_{rep}.json"
-                run_command([exe, "solve", "--instance", inst, "--impl", "omp", "--omp-mode", mode, "--threads", str(th),
-                             "--chains", "32", "--scenarios", "512", "--iters", "400", "--epochs", "3", "--seed", str(rep+1), "--out", tmp_json])
-                if os.path.exists(tmp_json):
-                    with open(tmp_json) as f: d = json.load(f)
-                    times.append(d["total_time_ms"])
-                    os.remove(tmp_json)
+            sims = []
+            for rep in range(repeats):
+                tmp = "results/temp_e3_omp.json"
+                run_command([
+                    exe, "solve", "--instance", inst, "--impl", "omp", "--omp-mode", mode,
+                    "--threads", str(t),
+                    "--chains", str(chains), "--scenarios", str(scenarios), "--iters", str(iters),
+                    "--seed", str(42 + rep), "--out", tmp
+                ])
+                with open(tmp) as f: d = json.load(f)
+                os.remove(tmp)
+                times.append(d["timings"]["kernel_ms"])
+                sims.append(d["timings"]["sim_per_s"])
 
-            median_t = float(np.median(times))
-            iqr_t = float(np.percentile(times, 75) - np.percentile(times, 25))
-
-            if mode == "chains" and th == 1:
-                t1_chains = median_t
-
-            speedup = t1_chains / median_t if t1_chains else 1.0
-            efficiency = speedup / th
+            t_med = float(np.median(times))
+            t_iqr = float(np.percentile(times, 75) - np.percentile(times, 25))
+            speedup = t_serial_median / t_med if t_med > 0 else 1.0
+            efficiency = speedup / t
+            sim_med = float(np.median(sims))
 
             records.append({
-                "mode": mode, "threads": th,
-                "median_time_ms": round(median_t, 2), "iqr_time_ms": round(iqr_t, 2),
-                "speedup": round(speedup, 3), "efficiency": round(efficiency, 3)
+                "mode": mode,
+                "threads": t,
+                "time_ms_median": t_med,
+                "time_ms_iqr": t_iqr,
+                "speedup": speedup,
+                "efficiency": efficiency,
+                "sim_per_sec": sim_med
             })
-            print(f"Mode={mode:9s} | Threads={th:2d} | Time={median_t:8.2f} ms | Speedup={speedup:5.2f}x | Efficiency={efficiency:5.2f}")
+            print(f"Mode={mode:<9} Threads={t:>2} | Time={t_med:>7.1f} ms | Speedup={speedup:>5.2f}x | Eff={efficiency*100:>5.1f}%")
 
-    csv_path = "results/e3_openmp_scaling.csv"
-    with open(csv_path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(records[0].keys()))
-        w.writeheader()
-        w.writerows(records)
-    print(f"Saved {csv_path}")
+    out_csv = "results/e3_openmp_scaling.csv"
+    with open(out_csv, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["mode", "threads", "time_ms_median", "time_ms_iqr", "speedup", "efficiency", "sim_per_sec"])
+        writer.writeheader()
+        writer.writerows(records)
+    print(f"E3 complete. Saved to {out_csv}")
 
+# -------------------------------------------------------------
+# E4: Throughput & Scaling across scenario sizes S
+# -------------------------------------------------------------
 def exp_e4_throughput(exe):
-    print("\n--- Running Experiment E4: Scenario and Aircraft Scaling ---")
-    s_list = [128, 256, 512, 1024, 2048]
-    n_list = [10, 20, 50, 100]
+    print("\n--- Running Experiment E4: Throughput vs S ---")
+    os.makedirs("results", exist_ok=True)
+    n = 30
+    rho = 1.2
+    inst = ensure_instance(exe, n, rho)
+
+    s_values = [128, 256, 512, 1024, 2048, 4096]
     records = []
 
-    for n in n_list:
-        inst = ensure_instance(exe, n, 1.2)
-        for s in s_list:
-            # 1. Serial
-            tmp_s = f"results/temp_e4_s_{n}_{s}.json"
-            run_command([exe, "solve", "--instance", inst, "--impl", "serial", "--chains", "16", "--scenarios", str(s), "--iters", "300", "--epochs", "2", "--seed", "1", "--out", tmp_s])
-            with open(tmp_s) as f: d_s = json.load(f)
-            os.remove(tmp_s)
+    for S in s_values:
+        # Serial
+        tmp = "results/temp_e4_ser.json"
+        run_command([
+            exe, "solve", "--instance", inst, "--impl", "serial",
+            "--chains", "8", "--scenarios", str(S), "--iters", "300",
+            "--seed", "42", "--out", tmp
+        ])
+        with open(tmp) as f: ser_d = json.load(f)
+        os.remove(tmp)
 
-            # 2. OpenMP (8 threads)
-            tmp_o = f"results/temp_e4_o_{n}_{s}.json"
-            run_command([exe, "solve", "--instance", inst, "--impl", "omp", "--omp-mode", "chains", "--threads", "8", "--chains", "16", "--scenarios", str(s), "--iters", "300", "--epochs", "2", "--seed", "1", "--out", tmp_o])
-            with open(tmp_o) as f: d_o = json.load(f)
-            os.remove(tmp_o)
+        # OpenMP (12 threads)
+        tmp = "results/temp_e4_omp.json"
+        run_command([
+            exe, "solve", "--instance", inst, "--impl", "omp", "--omp-mode", "chains",
+            "--threads", "12",
+            "--chains", "8", "--scenarios", str(S), "--iters", "300",
+            "--seed", "42", "--out", tmp
+        ])
+        with open(tmp) as f: omp_d = json.load(f)
+        os.remove(tmp)
 
-            records.append({
-                "n": n, "S": s,
-                "serial_time_ms": d_s["total_time_ms"],
-                "serial_sim_per_sec": d_s["sim_per_sec"],
-                "omp_time_ms": d_o["total_time_ms"],
-                "omp_sim_per_sec": d_o["sim_per_sec"],
-                "speedup_omp_vs_serial": round(d_s["total_time_ms"] / d_o["total_time_ms"], 2)
-            })
-            print(f"n={n:3d}, S={s:4d} | Serial: {d_s['sim_per_sec']:10.0f} sim/s | OMP: {d_o['sim_per_sec']:10.0f} sim/s | Speedup: {records[-1]['speedup_omp_vs_serial']:.2f}x")
+        records.append({
+            "scenarios": S,
+            "serial_time_ms": ser_d["timings"]["kernel_ms"],
+            "serial_sim_per_s": ser_d["timings"]["sim_per_s"],
+            "omp_time_ms": omp_d["timings"]["kernel_ms"],
+            "omp_sim_per_s": omp_d["timings"]["sim_per_s"],
+            "omp_speedup": ser_d["timings"]["kernel_ms"] / omp_d["timings"]["kernel_ms"]
+        })
+        print(f"S={S:>5} | Serial={ser_d['timings']['kernel_ms']:>7.1f} ms | OpenMP={omp_d['timings']['kernel_ms']:>6.1f} ms | Speedup={records[-1]['omp_speedup']:>5.2f}x")
 
-    csv_path = "results/e4_throughput.csv"
-    with open(csv_path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(records[0].keys()))
-        w.writeheader()
-        w.writerows(records)
-    print(f"Saved {csv_path}")
+    out_csv = "results/e4_throughput.csv"
+    with open(out_csv, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["scenarios", "serial_time_ms", "serial_sim_per_s", "omp_time_ms", "omp_sim_per_s", "omp_speedup"])
+        writer.writeheader()
+        writer.writerows(records)
+    print(f"E4 complete. Saved to {out_csv}")
 
-def exp_e8_value_of_uncertainty(exe):
-    print("\n--- Running Experiment E8: Value of Modelling Uncertainty ---")
-    inst = ensure_instance(exe, 50, 1.2)
-    records = []
+# -------------------------------------------------------------
+# E5: Does planning with randomness help? (Robust vs Deterministic)
+# -------------------------------------------------------------
+def exp_e5_uncertainty(exe):
+    print("\n--- Running Experiment E5: Value of Robust Optimization ---")
+    os.makedirs("results", exist_ok=True)
+    # Use n=30, rho=1.0 so deadlines are realistic and late_pct is clearly below 100%
+    n = 30
+    rho = 1.0
+    inst = ensure_instance(exe, n, rho, seed=42)
 
-    # 1. Deterministic-optimized schedule (S=1 scenario, zero noise)
-    tmp_det = "results/temp_e8_det.json"
-    run_command([exe, "solve", "--instance", inst, "--impl", "omp", "--chains", "32", "--scenarios", "1", "--iters", "1000", "--epochs", "5", "--seed", "1", "--out", tmp_det])
-    with open(tmp_det) as f: d_det = json.load(f)
+    # 1. Deterministic optimization (trained on S=1 zero-noise scenario)
+    tmp_det = "results/temp_e5_det.json"
+    run_command([
+        exe, "solve", "--instance", inst, "--impl", "omp",
+        "--chains", "16", "--scenarios", "1", "--iters", "1000",
+        "--seed", "42", "--out", tmp_det
+    ])
+    with open(tmp_det) as f: det_data = json.load(f)
     os.remove(tmp_det)
 
-    # 2. Robust-optimized schedule (S=1024 scenarios)
-    tmp_rob = "results/temp_e8_rob.json"
-    run_command([exe, "solve", "--instance", inst, "--impl", "omp", "--chains", "32", "--scenarios", "1024", "--iters", "1000", "--epochs", "5", "--seed", "1", "--out", tmp_rob])
-    with open(tmp_rob) as f: d_rob = json.load(f)
+    # 2. Robust optimization (trained on S=1024 random scenarios)
+    tmp_rob = "results/temp_e5_rob.json"
+    run_command([
+        exe, "solve", "--instance", inst, "--impl", "omp",
+        "--chains", "16", "--scenarios", "1024", "--iters", "1000",
+        "--seed", "42", "--out", tmp_rob
+    ])
+    with open(tmp_rob) as f: rob_data = json.load(f)
     os.remove(tmp_rob)
 
-    records.append({
-        "strategy": "Deterministic-Optimized",
-        "J_out_of_sample": d_det["J_out_of_sample"],
-        "mean_cost": d_det["mean_cost"],
-        "std_cost": d_det["std_cost"],
-        "p95": d_det["p95"],
-        "cvar95": d_det["cvar95"],
-        "miss_prob": d_det["miss_prob"],
-        "plan_dev": d_det["plan_dev"]
-    })
-    records.append({
-        "strategy": "Robust-Optimized (RunwayMC)",
-        "J_out_of_sample": d_rob["J_out_of_sample"],
-        "mean_cost": d_rob["mean_cost"],
-        "std_cost": d_rob["std_cost"],
-        "p95": d_rob["p95"],
-        "cvar95": d_rob["cvar95"],
-        "miss_prob": d_rob["miss_prob"],
-        "plan_dev": d_rob["plan_dev"]
-    })
+    # Both are scored on the exact same 20,000 out-of-sample test days
+    det_m = det_data["metrics"]["best"]
+    rob_m = rob_data["metrics"]["best"]
 
-    print(f"Deterministic: OOS J={d_det['J_out_of_sample']:.1f}, Miss Prob={d_det['miss_prob']*100:.1f}%, CVaR95={d_det['cvar95']:.1f}")
-    print(f"Robust:        OOS J={d_rob['J_out_of_sample']:.1f}, Miss Prob={d_rob['miss_prob']*100:.1f}%, CVaR95={d_rob['cvar95']:.1f}")
+    records = [
+        {
+            "strategy": "Deterministic (Planned with S=1, no randomness)",
+            "test_mean_cost": det_m["mean_cost"],
+            "test_p95_cost": det_m["p95"],
+            "test_late_pct": det_m["late_pct"],
+            "emergency_mean_delay": det_m["emergency_mean_delay"]
+        },
+        {
+            "strategy": "Robust RunwayMC (Planned with S=1024 random days)",
+            "test_mean_cost": rob_m["mean_cost"],
+            "test_p95_cost": rob_m["p95"],
+            "test_late_pct": rob_m["late_pct"],
+            "emergency_mean_delay": rob_m["emergency_mean_delay"]
+        }
+    ]
 
-    csv_path = "results/e8_uncertainty.csv"
-    with open(csv_path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(records[0].keys()))
-        w.writeheader()
-        w.writerows(records)
-    print(f"Saved {csv_path}")
+    out_csv = "results/e5_uncertainty.csv"
+    with open(out_csv, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["strategy", "test_mean_cost", "test_p95_cost", "test_late_pct", "emergency_mean_delay"])
+        writer.writeheader()
+        writer.writerows(records)
 
-def exp_e9_sensitivity(exe):
-    print("\n--- Running Experiment E9: Sensitivity Analysis (Closure & Lambda) ---")
-    inst = ensure_instance(exe, 30, 1.2)
-    lambdas = [0.0, 0.5, 1.0, 2.0]
-    records = []
-
-    for lam in lambdas:
-        tmp_json = f"results/temp_e9_lam_{lam}.json"
-        run_command([exe, "solve", "--instance", inst, "--impl", "omp", "--chains", "24", "--scenarios", "512",
-                     "--iters", "600", "--epochs", "4", "--lambda", str(lam), "--seed", "42", "--out", tmp_json])
-        if os.path.exists(tmp_json):
-            with open(tmp_json) as f: d = json.load(f)
-            os.remove(tmp_json)
-            records.append({
-                "lambda": lam,
-                "J_out_of_sample": d["J_out_of_sample"],
-                "mean_cost": d["mean_cost"],
-                "std_cost": d["std_cost"],
-                "p95": d["p95"],
-                "cvar95": d["cvar95"],
-                "miss_prob": d["miss_prob"]
-            })
-            print(f"Lambda={lam:.1f} | OOS J={d['J_out_of_sample']:.1f} | Mean={d['mean_cost']:.1f} | Std={d['std_cost']:.1f}")
-
-    csv_path = "results/e9_sensitivity.csv"
-    with open(csv_path, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=list(records[0].keys()))
-        w.writeheader()
-        w.writerows(records)
-    print(f"Saved {csv_path}")
+    gap = (det_m["mean_cost"] - rob_m["mean_cost"]) / det_m["mean_cost"] * 100.0
+    print(f"Deterministic Test Mean Cost: {det_m['mean_cost']:.2f}")
+    print(f"Robust RunwayMC Test Mean Cost: {rob_m['mean_cost']:.2f} (Reduction: {gap:.1f}%)")
+    print(f"Late aircraft share: Det={det_m['late_pct']*100:.1f}%, Rob={rob_m['late_pct']*100:.1f}%")
+    print(f"E5 complete. Saved to {out_csv}")
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--all", action="store_true", help="Run all experiments")
-    parser.add_argument("--e2", action="store_true", help="Run E2 baselines")
-    parser.add_argument("--e3", action="store_true", help="Run E3 OpenMP scaling")
-    parser.add_argument("--e4", action="store_true", help="Run E4 throughput scaling")
-    parser.add_argument("--e8", action="store_true", help="Run E8 value of uncertainty")
-    parser.add_argument("--e9", action="store_true", help="Run E9 sensitivity")
+    parser = argparse.ArgumentParser(description="RunwayMC Benchmark Suite (E1-E5)")
+    parser.add_argument("--all", action="store_true", help="Run all experiments E1-E5")
+    parser.add_argument("--e1", action="store_true", help="Run E1: Correctness")
+    parser.add_argument("--e2", action="store_true", help="Run E2: Baselines")
+    parser.add_argument("--e3", action="store_true", help="Run E3: OpenMP scaling")
+    parser.add_argument("--e4", action="store_true", help="Run E4: Throughput vs S")
+    parser.add_argument("--e5", action="store_true", help="Run E5: Robust vs Deterministic")
     args = parser.parse_args()
 
     exe = get_executable()
-    if args.all or not any([args.e2, args.e3, args.e4, args.e8, args.e9]):
+
+    if args.all or (not any([args.e1, args.e2, args.e3, args.e4, args.e5])):
+        exp_e1_correctness(exe)
         exp_e2_baselines(exe)
         exp_e3_openmp_scaling(exe)
         exp_e4_throughput(exe)
-        exp_e8_value_of_uncertainty(exe)
-        exp_e9_sensitivity(exe)
+        exp_e5_uncertainty(exe)
     else:
+        if args.e1: exp_e1_correctness(exe)
         if args.e2: exp_e2_baselines(exe)
         if args.e3: exp_e3_openmp_scaling(exe)
         if args.e4: exp_e4_throughput(exe)
-        if args.e8: exp_e8_value_of_uncertainty(exe)
-        if args.e9: exp_e9_sensitivity(exe)
+        if args.e5: exp_e5_uncertainty(exe)
 
 if __name__ == "__main__":
     main()

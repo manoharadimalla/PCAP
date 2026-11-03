@@ -25,22 +25,21 @@ bool validate_schedule(
     std::string* error_msg = nullptr
 );
 
+// Evaluates a schedule over test/evaluation noise scenarios
 EvalResult evaluate_schedule_cpu(
     const AircraftData& data,
     const SeparationMatrix& sep,
     const std::vector<int>& perm,
     const NoiseData& noise,
-    float lambda_std = 1.0f,
     float m_penalty = 5.0f
 );
 
-// High-precision double evaluator for testing R10/verification
+// High-precision double evaluator for verification
 double evaluate_schedule_cpu_double(
     const AircraftData& data,
     const SeparationMatrix& sep,
     const std::vector<int>& perm,
     const NoiseData& noise,
-    float lambda_std = 1.0f,
     float m_penalty = 5.0f
 );
 
@@ -59,7 +58,7 @@ AircraftData generate_instance(
     const SeparationMatrix* custom_sep = nullptr
 );
 
-// Noise generator
+// Noise generator (delays + closure; weather removed)
 void generate_noise_cpu(
     NoiseData& noise,
     const AircraftData& data,
@@ -77,7 +76,6 @@ SAResult solve_random_search(
     int S,
     int num_samples,
     uint64_t seed,
-    float lambda_std = 1.0f,
     float m_penalty = 5.0f
 );
 
@@ -85,7 +83,6 @@ SAResult solve_brute_force(
     const AircraftData& data,
     const SeparationMatrix& sep,
     const NoiseData& noise,
-    float lambda_std = 1.0f,
     float m_penalty = 5.0f
 );
 
@@ -95,10 +92,8 @@ SAResult solve_sa_serial(
     const SeparationMatrix& sep,
     int C,
     int S,
-    int E,
-    int I,
+    int iters,
     uint64_t seed,
-    float lambda_std = 1.0f,
     float m_penalty = 5.0f,
     bool progress = false
 );
@@ -109,12 +104,10 @@ SAResult solve_sa_omp(
     const SeparationMatrix& sep,
     int C,
     int S,
-    int E,
-    int I,
+    int iters,
     uint64_t seed,
-    const std::string& mode = "chains", // "chains", "scenarios", "hybrid"
+    const std::string& mode = "chains", // "chains" or "scenarios"
     int num_threads = 0,
-    float lambda_std = 1.0f,
     float m_penalty = 5.0f,
     bool progress = false
 );
@@ -126,12 +119,10 @@ SAResult solve_sa_cuda(
     const SeparationMatrix& sep,
     int C,
     int S,
-    int E,
-    int I,
+    int iters,
     uint64_t seed,
-    const std::string& kernel_name = "k3", // "k1", "k2", "k3"
+    const std::string& kernel_name = "main", // "main" or "naive"
     int block_size = 256,
-    float lambda_std = 1.0f,
     float m_penalty = 5.0f
 );
 #endif

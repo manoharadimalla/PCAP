@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
 """
-RunwayMC Calibration Script (Section 8.2)
-Verifies that all experiment instances satisfy the calibration gate:
-gap = (J_FCFS - J_best) / J_FCFS >= 10% (0.10)
+RunwayMC Calibration Script (Section 6 & 8.2)
+Confirms that FCFS is at least 10% worse than the best schedule found.
 Outputs results/calibration.csv.
 """
 
@@ -42,7 +41,7 @@ def main():
 
     records = []
     print("=" * 60)
-    print("RunwayMC Calibration Gate Verification (Section 8.2)")
+    print("RunwayMC Calibration Gate Verification")
     print("=" * 60)
 
     for n in n_values:
@@ -52,63 +51,50 @@ def main():
             gen_cmd = [exe, "gen", "--n", str(n), "--rho", str(rho), "--seed", str(seed), "--out", inst_path]
             run_command(gen_cmd)
 
-            # 2. Evaluate FCFS
-            eval_out = run_command([exe, "eval", "--instance", inst_path, "--perm", "fcfs", "--scenarios", "1024", "--seed", str(seed)])
-            j_fcfs = None
-            for line in eval_out.splitlines():
-                if line.startswith("J:"):
-                    j_fcfs = float(line.split(":")[1].strip())
-                    break
-            if j_fcfs is None:
-                raise ValueError(f"Failed to parse J from eval: {eval_out}")
-
-            # 3. Run solver to find J_best
+            # 2. Run solver with 32 chains, 2500 iterations
             res_json = f"results/calib_temp_n{n}_r{int(rho*10)}.json"
             solve_cmd = [
                 exe, "solve", "--instance", inst_path,
                 "--impl", "omp", "--omp-mode", "chains",
                 "--chains", "32", "--scenarios", "512",
-                "--iters", "1000", "--epochs", "8",
+                "--iters", "2500",
                 "--seed", str(seed), "--out", res_json
             ]
             run_command(solve_cmd)
 
             with open(res_json, "r") as f:
                 res_data = json.load(f)
-            j_best = res_data["J_in_sample"]
+
+            cost_fcfs = res_data["metrics"]["fcfs"]["mean_cost"]
+            cost_best = res_data["metrics"]["best"]["mean_cost"]
             if os.path.exists(res_json):
                 os.remove(res_json)
 
-            gap = (j_fcfs - j_best) / j_fcfs if j_fcfs > 0 else 0.0
+            gap = (cost_fcfs - cost_best) / cost_fcfs if cost_fcfs > 0 else 0.0
             passed = gap >= 0.10
 
             records.append({
                 "n": n,
                 "rho": rho,
-                "instance": inst_path,
-                "J_FCFS": round(j_fcfs, 4),
-                "J_best": round(j_best, 4),
-                "gap_percent": round(gap * 100.0, 2),
+                "cost_fcfs": cost_fcfs,
+                "cost_best": cost_best,
+                "gap_pct": gap * 100.0,
                 "gate_passed": passed
             })
 
-            status = "PASSED" if passed else "FAILED"
-            print(f"n={n:3d}, rho={rho:.1f} | J_FCFS={j_fcfs:10.2f} | J_best={j_best:10.2f} | Gap={gap*100:6.2f}% | Gate: {status}")
+            status = "PASS" if passed else "FAIL"
+            print(f"n={n:>2}, rho={rho:>3.1f} | FCFS={cost_fcfs:>10.2f}, Best={cost_best:>10.2f} | Gap={gap*100:>6.2f}% | [{status}]")
 
-    calib_csv = "results/calibration.csv"
-    with open(calib_csv, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["n", "rho", "instance", "J_FCFS", "J_best", "gap_percent", "gate_passed"])
+    csv_path = "results/calibration.csv"
+    with open(csv_path, "w", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["n", "rho", "cost_fcfs", "cost_best", "gap_pct", "gate_passed"])
         writer.writeheader()
         writer.writerows(records)
 
-    print("=" * 60)
     all_passed = all(r["gate_passed"] for r in records)
-    print(f"Calibration table written to {calib_csv}")
-    if all_passed:
-        print("ALL CALIBRATION GATES PASSED (gap >= 10%).")
-    else:
-        print("WARNING: Some instances did not achieve gap >= 10%.")
     print("=" * 60)
+    print(f"Calibration Summary: {'ALL PASSED (Gate >= 10% satisfied)' if all_passed else 'SOME FAILED'}")
+    print(f"Saved results to: {csv_path}")
 
 if __name__ == "__main__":
     main()

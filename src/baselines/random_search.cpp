@@ -13,7 +13,6 @@ SAResult solve_random_search(
     int S,
     int num_samples,
     uint64_t seed,
-    float lambda_std,
     float m_penalty
 ) {
     auto start_time = std::chrono::high_resolution_clock::now();
@@ -36,9 +35,9 @@ SAResult solve_random_search(
             std::swap(perm[i], perm[j]);
         }
 
-        EvalResult eval = evaluate_schedule_cpu(data, sep, perm, noise, lambda_std, m_penalty);
-        if (eval.J < best_J) {
-            best_J = eval.J;
+        EvalResult eval = evaluate_schedule_cpu(data, sep, perm, noise, m_penalty);
+        if (eval.mean_cost < best_J) {
+            best_J = eval.mean_cost;
             best_perm = perm;
         }
     }

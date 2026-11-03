@@ -251,18 +251,10 @@ class MainWindow(QMainWindow):
         self.tab_summary = SummaryTab(self)
         self.tab_timeline = TimelineTab(self)
         self.tab_distribution = DistributionTab(self)
-        self.tab_replay = ReplayTab(
-            get_binary_path_cb=lambda: self.binary_path,
-            get_run_context_cb=lambda: self.current_run_context,
-            parent=self,
-        )
-        self.tab_convergence = ConvergenceTab(self)
 
         self.tabs_results.addTab(self.tab_summary, "Summary")
         self.tabs_results.addTab(self.tab_timeline, "Timeline (Gantt)")
         self.tabs_results.addTab(self.tab_distribution, "Cost Distribution")
-        self.tabs_results.addTab(self.tab_replay, "Scenario Replay")
-        self.tabs_results.addTab(self.tab_convergence, "Convergence")
 
         self.splitter.addWidget(self.tabs_results)
         self.splitter.setSizes([450, 750])
@@ -581,14 +573,10 @@ class MainWindow(QMainWindow):
         args = [
             "solve",
             "--instance", inst_path,
-            "--params", params_path,
             "--impl", execution_settings.impl,
             "--chains", str(search_settings.chains),
             "--scenarios", str(search_settings.scenarios),
             "--iters", str(search_settings.iters),
-            "--epochs", str(search_settings.epochs),
-            "--lambda", str(search_settings.lambda_std),
-            "--penalty", str(scenario_settings.m_penalty),
             "--seed", str(search_settings.seed),
             "--s-final", str(search_settings.s_final),
             "--dump-costs", str(search_settings.s_final),
@@ -600,16 +588,13 @@ class MainWindow(QMainWindow):
             args.extend(["--omp-mode", execution_settings.omp_mode])
             if execution_settings.threads > 0:
                 args.extend(["--threads", str(execution_settings.threads)])
-        elif execution_settings.impl == "cuda":
-            args.extend(["--kernel", execution_settings.kernel, "--block", str(execution_settings.block_size)])
 
         # Update UI state
         self.btn_run.setEnabled(False)
         self.btn_cancel.setEnabled(True)
-        self.progress_bar.setValue(0)
-        self.lbl_run_status.setText("Solving...")
-        self.tab_convergence.reset_live_history()
-        self.tabs_results.setCurrentWidget(self.tab_convergence)
+        self.progress_bar.setRange(0, 0) # Indeterminate running indicator
+        self.lbl_run_status.setText("Solving in parallel...")
+        self.tabs_results.setCurrentWidget(self.tab_summary)
 
         self._append_log(f"\n[Run] Starting solve: {execution_settings.impl.upper()} (n={len(aircraft_list)})")
         self.runner.start(self.binary_path, args, result_json_path=result_json_path)
@@ -620,24 +605,21 @@ class MainWindow(QMainWindow):
 
     @Slot(int, int, float, float)
     def _on_runner_progress(self, epoch: int, total_epochs: int, best_j: float, elapsed_s: float) -> None:
-        pct = int((epoch / max(1, total_epochs)) * 100)
-        self.progress_bar.setValue(pct)
-        self.lbl_run_status.setText(f"Running epoch {epoch}/{total_epochs} (Best J: {best_j:.2f})...")
-        self.tab_convergence.on_live_progress(epoch, total_epochs, best_j, elapsed_s)
+        self.lbl_run_status.setText(f"Running (Best cost: {best_j:.2f})...")
 
     @Slot(object)
     def _on_runner_finished(self, result_dict: Dict[str, Any]) -> None:
         self.btn_run.setEnabled(True)
         self.btn_cancel.setEnabled(False)
+        self.progress_bar.setRange(0, 100)
         self.progress_bar.setValue(100)
         self.lbl_run_status.setText("Run completed successfully.")
 
         self.current_state.last_result = result_dict
-        # Update all result tabs
+        # Update all 3 result tabs
         self.tab_summary.set_data(result_dict, self.current_state)
         self.tab_timeline.set_data(result_dict, self.current_state)
         self.tab_distribution.set_data(result_dict, self.current_state)
-        self.tab_replay.set_data(result_dict, self.current_state)
         self.tab_convergence.set_data(result_dict, self.current_state)
 
         # Switch to summary view
