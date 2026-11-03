@@ -58,16 +58,18 @@ SAResult solve_sa_cuda(
     const SeparationMatrix& sep,
     int C,
     int S,
-    int E,
-    int I,
+    int iters,
     uint64_t seed,
     const std::string& kernel_name,
     int block_size,
-    float lambda_std,
     float m_penalty
 ) {
     auto wall_start = std::chrono::high_resolution_clock::now();
     int n = data.n;
+
+    int E = std::max(1, std::min(10, iters / 100));
+    int I = std::max(1, iters / E);
+    float lambda_std = 0.0f;
 
     // 1. Upload separation matrix to constant memory
     CUDA_CHECK(cudaMemcpyToSymbol(cuda::c_sep, sep.data, 36 * sizeof(float)));

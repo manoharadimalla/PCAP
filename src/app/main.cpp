@@ -322,6 +322,13 @@ int main(int argc, char* argv[]) {
             std::cerr << "OpenMP not compiled in this build.\n";
             return 1;
 #endif
+        } else if (impl == "cuda") {
+#if defined(RUNWAY_HAS_CUDA)
+            res = solve_sa_cuda(data, sep, chains, scenarios, iters, seed, "main", 256, 5.0f);
+#else
+            std::cerr << "CUDA not compiled in this build.\n";
+            return 1;
+#endif
         } else if (impl == "random") {
             int total_evals = chains * iters;
             res = solve_random_search(data, sep, scenarios, total_evals, seed, 5.0f);
