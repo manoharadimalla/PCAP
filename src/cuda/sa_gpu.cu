@@ -147,7 +147,7 @@ SAResult solve_sa_cuda(
     // Temperature calibration (same math as CPU)
     NoiseData calib_noise;
     generate_noise_cpu(calib_noise, data, S, seed + 1);
-    float J_base = evaluate_schedule_cpu(data, sep, fcfs, calib_noise, lambda_std, m_penalty).J;
+    float J_base = evaluate_schedule_cpu(data, sep, fcfs, calib_noise, m_penalty).J;
     XorShift64Star calib_rng(seed + 999);
     std::vector<int> tmp_p = fcfs;
     std::vector<int> prop_p(n);
@@ -155,7 +155,7 @@ SAResult solve_sa_cuda(
     int w_cnt = 0;
     for (int k = 0; k < 200; ++k) {
         propose_move(tmp_p.data(), prop_p.data(), n, calib_rng);
-        float J_p = evaluate_schedule_cpu(data, sep, prop_p, calib_noise, lambda_std, m_penalty).J;
+        float J_p = evaluate_schedule_cpu(data, sep, prop_p, calib_noise, m_penalty).J;
         float d = J_p - J_base;
         if (d > 0.0f) { w_sum += d; w_cnt++; }
     }
@@ -233,7 +233,7 @@ SAResult solve_sa_cuda(
         std::vector<ScorePair> scores(C);
         for (int c = 0; c < C; ++c) {
             std::vector<int> p(h_chain_bests.begin() + c * n, h_chain_bests.begin() + (c + 1) * n);
-            float sc = evaluate_schedule_cpu(data, sep, p, sync_noise, lambda_std, m_penalty).J;
+            float sc = evaluate_schedule_cpu(data, sep, p, sync_noise, m_penalty).J;
             scores[c] = {c, sc};
             if (sc < global_best_J) {
                 global_best_J = sc;

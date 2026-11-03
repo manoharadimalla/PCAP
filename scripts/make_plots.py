@@ -73,20 +73,30 @@ if os.path.exists("results/e3_openmp_scaling.csv"):
     print("Generated E3 figure")
 
 # -------------------------------------------------------------
-# Figure E4: Throughput vs S
+# Figure E4: Throughput vs S (Serial vs OpenMP vs CUDA)
 # -------------------------------------------------------------
 if os.path.exists("results/e4_throughput.csv"):
-    s_vals, ser_times, omp_times = [], [], []
+    s_vals, ser_times, omp_times, cuda_times = [], [], [], []
+    omp_speedups, cuda_speedups = [], []
     with open("results/e4_throughput.csv") as f:
         reader = csv.DictReader(f)
         for r in reader:
             s_vals.append(int(r["scenarios"]))
             ser_times.append(float(r["serial_time_ms"]))
             omp_times.append(float(r["omp_time_ms"]))
+            omp_speedups.append(float(r.get("omp_speedup", 1.0)))
+            c_time = float(r.get("cuda_time_ms", 0.0) or 0.0)
+            c_sp = float(r.get("cuda_speedup", 0.0) or 0.0)
+            cuda_times.append(c_time)
+            cuda_speedups.append(c_sp)
+
+    has_cuda = any(c > 0.0 for c in cuda_times)
 
     fig, ax = plt.subplots(figsize=(7, 4.5))
-    ax.plot(s_vals, ser_times, "o-", label="Serial Reference", color="#e7298a", lw=2)
-    ax.plot(s_vals, omp_times, "s-", label="OpenMP (12 threads)", color="#2b5c8f", lw=2)
+    ax.plot(s_vals, ser_times, "o-", label="Serial Reference (1 thread)", color="#e7298a", lw=2)
+    ax.plot(s_vals, omp_times, "s-", label="OpenMP Multi-Core CPU", color="#2b5c8f", lw=2)
+    if has_cuda:
+        ax.plot(s_vals, cuda_times, "^-", label="CUDA GPU Acceleration", color="#27ae60", lw=2.5)
 
     ax.set_xscale("log", base=2)
     ax.set_yscale("log")
@@ -99,6 +109,23 @@ if os.path.exists("results/e4_throughput.csv"):
     fig.savefig("results/figures/e4_throughput.pdf")
     plt.close(fig)
     print("Generated E4 figure")
+
+    # If CUDA data is available, also produce a dedicated Speedup Comparison figure
+    if has_cuda:
+        fig_sp, ax_sp = plt.subplots(figsize=(7, 4.5))
+        ax_sp.plot(s_vals, [1.0]*len(s_vals), "k:", label="Baseline (1.0x)")
+        ax_sp.plot(s_vals, omp_speedups, "s--", label="OpenMP Speedup vs Serial", color="#2b5c8f", lw=2)
+        ax_sp.plot(s_vals, cuda_speedups, "^-", label="CUDA Speedup vs Serial", color="#27ae60", lw=2.5)
+        ax_sp.set_xscale("log", base=2)
+        ax_sp.set_xlabel("Scenarios (S)")
+        ax_sp.set_ylabel("Speedup Multiplier (X)")
+        ax_sp.set_title("E4: Parallel Speedup vs. Serial Baseline across Scenarios", fontweight="bold")
+        ax_sp.legend()
+        fig_sp.tight_layout()
+        fig_sp.savefig("results/figures/e4_cuda_speedup.png", dpi=300)
+        fig_sp.savefig("results/figures/e4_cuda_speedup.pdf")
+        plt.close(fig_sp)
+        print("Generated E4 CUDA speedup figure")
 
 # -------------------------------------------------------------
 # Figure E5: Robust vs Deterministic

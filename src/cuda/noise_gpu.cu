@@ -26,8 +26,9 @@ __global__ void transform_noise_kernel(
 
     // Transform per-scenario variables
     if (idx < S) {
-        float r_w = u_mult[idx];
-        mult[idx] = (r_w < 0.70f) ? 1.0f : ((r_w < 0.90f) ? 1.15f : 1.30f);
+        if (mult) {
+            mult[idx] = 1.0f;
+        }
 
         float r_c = u_cclose[idx];
         if (r_c < p_close) {
@@ -113,7 +114,10 @@ void upload_noise_host_to_device(
     size_t delay_bytes = h_noise.delay.size() * sizeof(float);
     size_t s_bytes = h_noise.S * sizeof(float);
     CUDA_CHECK(cudaMemcpy(d_delay, h_noise.delay.data(), delay_bytes, cudaMemcpyHostToDevice));
-    CUDA_CHECK(cudaMemcpy(d_mult, h_noise.mult.data(), s_bytes, cudaMemcpyHostToDevice));
+    if (d_mult && h_noise.S > 0) {
+        std::vector<float> ones(h_noise.S, 1.0f);
+        CUDA_CHECK(cudaMemcpy(d_mult, ones.data(), s_bytes, cudaMemcpyHostToDevice));
+    }
     CUDA_CHECK(cudaMemcpy(d_closeA, h_noise.closeA.data(), s_bytes, cudaMemcpyHostToDevice));
     CUDA_CHECK(cudaMemcpy(d_closeB, h_noise.closeB.data(), s_bytes, cudaMemcpyHostToDevice));
 }

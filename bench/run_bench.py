@@ -39,6 +39,14 @@ def ensure_instance(exe, n, rho, seed=42):
         run_command([exe, "gen", "--n", str(n), "--rho", str(rho), "--seed", str(seed), "--out", path])
     return path
 
+def check_cuda_available(exe):
+    out = run_command([exe, "info"])
+    try:
+        data = json.loads(out or "{}")
+        return bool(data.get("cuda_available", False))
+    except Exception:
+        return False
+
 # -------------------------------------------------------------
 # E1: Correctness Gate (Unit tests + Determinism + Brute-force match)
 # -------------------------------------------------------------
@@ -219,6 +227,12 @@ def exp_e4_throughput(exe):
     inst = ensure_instance(exe, n, rho)
 
     s_values = [128, 256, 512, 1024, 2048, 4096]
+    has_cuda = check_cuda_available(exe)
+    if has_cuda:
+        print("[INFO] CUDA detected! Benchmarking Serial, OpenMP, and CUDA.")
+    else:
+        print("[INFO] No CUDA device detected. Benchmarking Serial and OpenMP.")
+
     records = []
 
     for S in s_values:
@@ -232,30 +246,52 @@ def exp_e4_throughput(exe):
         with open(tmp) as f: ser_d = json.load(f)
         os.remove(tmp)
 
-        # OpenMP (12 threads)
+        # OpenMP (all available threads)
         tmp = "results/temp_e4_omp.json"
         run_command([
             exe, "solve", "--instance", inst, "--impl", "omp", "--omp-mode", "chains",
-            "--threads", "12",
             "--chains", "8", "--scenarios", str(S), "--iters", "300",
             "--seed", "42", "--out", tmp
         ])
         with open(tmp) as f: omp_d = json.load(f)
         os.remove(tmp)
 
-        records.append({
+        # CUDA (GPU) if available
+        cuda_time = 0.0
+        cuda_sim = 0.0
+        cuda_speedup = 0.0
+        if has_cuda:
+            tmp = "results/temp_e4_cuda.json"
+            run_command([
+                exe, "solve", "--instance", inst, "--impl", "cuda",
+                "--chains", "8", "--scenarios", str(S), "--iters", "300",
+                "--seed", "42", "--out", tmp
+            ])
+            with open(tmp) as f: cuda_d = json.load(f)
+            os.remove(tmp)
+            cuda_time = cuda_d["timings"]["kernel_ms"]
+            cuda_sim = cuda_d["timings"]["sim_per_s"]
+            cuda_speedup = ser_d["timings"]["kernel_ms"] / cuda_time if cuda_time > 0 else 0.0
+
+        rec = {
             "scenarios": S,
             "serial_time_ms": ser_d["timings"]["kernel_ms"],
             "serial_sim_per_s": ser_d["timings"]["sim_per_s"],
             "omp_time_ms": omp_d["timings"]["kernel_ms"],
             "omp_sim_per_s": omp_d["timings"]["sim_per_s"],
-            "omp_speedup": ser_d["timings"]["kernel_ms"] / omp_d["timings"]["kernel_ms"]
-        })
-        print(f"S={S:>5} | Serial={ser_d['timings']['kernel_ms']:>7.1f} ms | OpenMP={omp_d['timings']['kernel_ms']:>6.1f} ms | Speedup={records[-1]['omp_speedup']:>5.2f}x")
+            "omp_speedup": ser_d["timings"]["kernel_ms"] / omp_d["timings"]["kernel_ms"],
+            "cuda_time_ms": cuda_time,
+            "cuda_sim_per_s": cuda_sim,
+            "cuda_speedup": cuda_speedup
+        }
+        records.append(rec)
+        cuda_str = f" | CUDA={cuda_time:>6.1f} ms (Speedup={cuda_speedup:>5.2f}x)" if has_cuda else ""
+        print(f"S={S:>5} | Serial={ser_d['timings']['kernel_ms']:>7.1f} ms | OpenMP={omp_d['timings']['kernel_ms']:>6.1f} ms (Speedup={rec['omp_speedup']:>5.2f}x){cuda_str}")
 
     out_csv = "results/e4_throughput.csv"
     with open(out_csv, "w", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=["scenarios", "serial_time_ms", "serial_sim_per_s", "omp_time_ms", "omp_sim_per_s", "omp_speedup"])
+        fieldnames = ["scenarios", "serial_time_ms", "serial_sim_per_s", "omp_time_ms", "omp_sim_per_s", "omp_speedup", "cuda_time_ms", "cuda_sim_per_s", "cuda_speedup"]
+        writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         writer.writerows(records)
     print(f"E4 complete. Saved to {out_csv}")
