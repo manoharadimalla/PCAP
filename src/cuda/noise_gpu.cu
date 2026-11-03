@@ -65,7 +65,7 @@ void generate_noise_gpu(
     float t_min,
     float t_max,
     uint64_t seed,
-    float p_close
+    float p_close = 0.20f
 ) {
     curandGenerator_t gen;
     CURAND_CHECK(curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT));

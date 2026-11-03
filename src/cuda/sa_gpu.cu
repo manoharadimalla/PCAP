@@ -144,7 +144,8 @@ SAResult solve_sa_cuda(
         cuda::generate_noise_gpu(
             d_delay, d_mult, d_closeA, d_closeB,
             d_op, n, S, t_min, t_max,
-            seed + static_cast<uint64_t>(epoch) * 1000ULL
+            seed + static_cast<uint64_t>(epoch) * 1000ULL,
+            0.20f
         );
 
         CUDA_CHECK(cudaEventRecord(k_start));
