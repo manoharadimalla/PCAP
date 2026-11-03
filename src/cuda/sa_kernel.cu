@@ -6,6 +6,9 @@
 namespace runway {
 namespace cuda {
 
+// Definition of GPU constant memory separation matrix (declared extern in cuda_common.cuh)
+__constant__ float c_sep[36];
+
 template <int BLOCK_SIZE, int MAX_N>
 __global__ void sa_k2_k3_kernel(
     int* d_chain_perms,       // [C * n] current perms
