@@ -281,6 +281,7 @@ int main(int argc, char* argv[]) {
         int dump_costs = 0;
         std::string sep_file;
         int s_final = 20000;
+        float m_penalty = 5.0f;
 
         for (int i = 2; i < argc; ++i) {
             std::string arg = argv[i];
@@ -297,6 +298,7 @@ int main(int argc, char* argv[]) {
             else if (arg == "--dump-costs" && i + 1 < argc) dump_costs = std::stoi(argv[++i]);
             else if (arg == "--separation" && i + 1 < argc) sep_file = argv[++i];
             else if (arg == "--s-final" && i + 1 < argc) s_final = std::stoi(argv[++i]);
+            else if (arg == "--m-penalty" && i + 1 < argc) m_penalty = std::stof(argv[++i]);
         }
 
         AircraftData data;
@@ -314,24 +316,24 @@ int main(int argc, char* argv[]) {
 
         SAResult res;
         if (impl == "serial") {
-            res = solve_sa_serial(data, sep, chains, scenarios, iters, seed, 5.0f, progress);
+            res = solve_sa_serial(data, sep, chains, scenarios, iters, seed, m_penalty, progress);
         } else if (impl == "omp") {
 #if defined(RUNWAY_HAS_OPENMP)
-            res = solve_sa_omp(data, sep, chains, scenarios, iters, seed, omp_mode, threads, 5.0f, progress);
+            res = solve_sa_omp(data, sep, chains, scenarios, iters, seed, omp_mode, threads, m_penalty, progress);
 #else
             std::cerr << "OpenMP not compiled in this build.\n";
             return 1;
 #endif
         } else if (impl == "cuda") {
 #if defined(RUNWAY_HAS_CUDA)
-            res = solve_sa_cuda(data, sep, chains, scenarios, iters, seed, "main", 256, 5.0f);
+            res = solve_sa_cuda(data, sep, chains, scenarios, iters, seed, "main", 256, m_penalty);
 #else
             std::cerr << "CUDA not compiled in this build.\n";
             return 1;
 #endif
         } else if (impl == "random") {
             int total_evals = chains * iters;
-            res = solve_random_search(data, sep, scenarios, total_evals, seed, 5.0f);
+            res = solve_random_search(data, sep, scenarios, total_evals, seed, m_penalty);
         } else if (impl == "brute") {
             if (data.n > 9) {
                 std::cerr << "Brute force only supported for n <= 9 (got n=" << data.n << ").\n";
@@ -339,7 +341,7 @@ int main(int argc, char* argv[]) {
             }
             NoiseData noise;
             generate_noise_cpu(noise, data, scenarios, seed);
-            res = solve_brute_force(data, sep, noise, 5.0f);
+            res = solve_brute_force(data, sep, noise, m_penalty);
         } else {
             std::cerr << "Unknown impl: " << impl << "\n";
             return 1;
@@ -348,31 +350,39 @@ int main(int argc, char* argv[]) {
         // Test evaluation on fresh 20,000 scenarios
         NoiseData test_noise;
         generate_noise_cpu(test_noise, data, s_final, 99999);
-        res.out_of_sample_eval = evaluate_schedule_cpu(data, sep, res.best_perm, test_noise);
+        res.out_of_sample_eval = evaluate_schedule_cpu(data, sep, res.best_perm, test_noise, m_penalty);
 
         // Baseline FCFS schedule evaluated on identical test days
         std::vector<int> perm_fcfs = solve_fcfs(data);
-        EvalResult fcfs_eval = evaluate_schedule_cpu(data, sep, perm_fcfs, test_noise);
+        EvalResult fcfs_eval = evaluate_schedule_cpu(data, sep, perm_fcfs, test_noise, m_penalty);
 
-        // Planned times (zero noise)
-        std::vector<float> planned_times_fcfs(data.n, 0.0f);
+        // Planned times (zero noise), mapped by aircraft ID so planned_times[a] is aircraft a's time
+        std::vector<float> slot_times_fcfs(data.n, 0.0f);
         std::vector<float> zero_delay(data.n, 0.0f);
         simulate_one_with_times(
             perm_fcfs.data(), data.n, 0, 1,
             data.ready.data(), data.target.data(), data.latest.data(),
             data.weight.data(), data.cls.data(), sep.data,
             zero_delay.data(), 0.0f, 0.0f,
-            planned_times_fcfs.data()
+            slot_times_fcfs.data()
         );
+        std::vector<float> planned_times_fcfs(data.n, 0.0f);
+        for (int k = 0; k < data.n; ++k) {
+            planned_times_fcfs[perm_fcfs[k]] = slot_times_fcfs[k];
+        }
 
-        std::vector<float> planned_times_best(data.n, 0.0f);
+        std::vector<float> slot_times_best(data.n, 0.0f);
         simulate_one_with_times(
             res.best_perm.data(), data.n, 0, 1,
             data.ready.data(), data.target.data(), data.latest.data(),
             data.weight.data(), data.cls.data(), sep.data,
             zero_delay.data(), 0.0f, 0.0f,
-            planned_times_best.data()
+            slot_times_best.data()
         );
+        std::vector<float> planned_times_best(data.n, 0.0f);
+        for (int k = 0; k < data.n; ++k) {
+            planned_times_best[res.best_perm[k]] = slot_times_best[k];
+        }
 
         auto solve_end_time = std::chrono::high_resolution_clock::now();
         double end_to_end_ms = std::chrono::duration<double, std::milli>(solve_end_time - solve_start_time).count();
@@ -424,6 +434,7 @@ int main(int argc, char* argv[]) {
                      << ", \"end_to_end_ms\": " << end_to_end_ms
                      << ", \"sim_per_s\": " << res.sim_per_sec << "},\n"
                      << "  \"hardware\": {\"omp_max_threads\": " << omp_max_threads
+                     << ", \"threads_used\": " << (impl == "omp" ? (threads > 0 ? threads : omp_max_threads) : 1)
                      << ", \"cuda_available\": " << (cuda_avail ? "true" : "false") << "}\n"
                      << "}\n";
             } else {

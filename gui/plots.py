@@ -58,13 +58,18 @@ def plot_timeline(
         wake = str(ac.get("wake", "M")).upper()
         color = WAKE_COLORS.get(wake, "#95a5a6")
         aid = ac.get("id", idx)
+        try:
+            ac_idx = int(aid)
+        except (ValueError, TypeError):
+            ac_idx = idx
+
         prio = str(ac.get("priority", "Normal")).capitalize()
         target = float(ac.get("target", 0.0))
         latest = float(ac.get("latest", 0.0))
 
         # FCFS bar
-        if idx < len(planned_fcfs):
-            t_fcfs = planned_fcfs[idx]
+        if ac_idx < len(planned_fcfs):
+            t_fcfs = planned_fcfs[ac_idx]
             all_times.extend([t_fcfs, target, latest])
             ax.broken_barh(
                 [(t_fcfs, duration)],
@@ -95,8 +100,8 @@ def plot_timeline(
                 ax.plot(t_fcfs + duration / 2, y_fcfs + 0.25, marker="d", color="gold", markersize=6)
 
         # Best bar
-        if idx < len(planned_best):
-            t_best = planned_best[idx]
+        if ac_idx < len(planned_best):
+            t_best = planned_best[ac_idx]
             all_times.extend([t_best, target, latest])
             ax.broken_barh(
                 [(t_best, duration)],

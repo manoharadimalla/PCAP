@@ -120,9 +120,16 @@ class SummaryTab(BaseResultTab):
         self.lbl_runtime.setText(f"Compute Time: {k_ms:.1f} ms")
         self.lbl_sims.setText(f"Throughput: {sim_s:,.0f} sims/sec")
 
+        impl = str(result.get("impl", "serial")).upper()
         hw = result.get("hardware", {})
-        omp_t = hw.get("omp_max_threads", 1)
-        self.lbl_hw.setText(f"Threads: {omp_t} OpenMP threads")
+        threads_used = hw.get("threads_used", 1)
+        if impl == "OMP":
+            hw_str = f"Hardware: OpenMP ({threads_used} threads)"
+        elif impl == "CUDA":
+            hw_str = "Hardware: NVIDIA GPU (CUDA)"
+        else:
+            hw_str = "Hardware: Serial CPU (1 thread)"
+        self.lbl_hw.setText(hw_str)
 
     def _export_csv(self, file_path: str) -> None:
         with open(file_path, "w", newline="", encoding="utf-8") as f:

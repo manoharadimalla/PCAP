@@ -580,6 +580,8 @@ class MainWindow(QMainWindow):
             "--seed", str(search_settings.seed),
             "--s-final", str(search_settings.s_final),
             "--dump-costs", str(search_settings.s_final),
+            "--separation", sep_path,
+            "--m-penalty", str(scenario_settings.m_penalty),
             "--out", result_json_path,
             "--progress",
         ]
