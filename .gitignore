@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .vscode/
 .idea/
+runs/
+results/temp_*.json
+results/demo_*.json
